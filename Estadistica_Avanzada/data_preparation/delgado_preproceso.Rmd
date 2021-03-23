@@ -67,7 +67,7 @@ Examinar también los valores resumen de cada tipo de variable.
 Como primer paso definimos que librerias estaremos usando. Para ellos generamos un vector con todas las posibles librerias que necesitaremos, instalamos las que no tengamos, para finalmente mediante el uso de lapply cargarlas.
 
 ```{r}
-packages <- c("corrplot", "ggplot2", "stats", "stats")
+packages <- c("corrplot", "stringr","ggplot2", "stats", "tools")
 new <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new)) install.packages(new)
 foo=lapply(packages, require, character.only=TRUE)
@@ -87,25 +87,34 @@ tail(fifa2017)
 Veamos la cantidad de columnas, filas y como quedaron los tipos de datos en el dataframe para entender luego como hacer el trabajo de preprocesado de los mismos.
 ```{r}
 str(fifa2017) 
+nrow(fifa2017)
+ncol(fifa2017)
+
 ```
 En principio como vemos, 17588 obs. of  54 variables, la cantidad de filas y columnas en el dataframe coinciden con la inspecion visual que hemos hecho sobre el archivo csv.
 
-En cuanto a los tipos de datos es evidente que tendremos que normalizar varias variables, cambiar tipos de datos, completar valores vacios, etc.. como puede verse facilmente con por ej las variables: Height, Weight, National_Kit, 
+En cuanto a los tipos de datos es evidente que tendremos que normalizar varias variables, cambiar tipos de datos, completar valores vacios, etc.. como puede verse facilmente con por ej las variables: Height, Weight, National_Kit, etc...
 
 Veamos cuales son las estadisticas basicas tal como tenemos hasta ahora el dataframe sin ningun trabajo de procesado por el momento:
 ```{r}
 summary(fifa2017)
 ```
 
-Como hemos visto arriba, muchas variables cuantitivas se cargaron por default como character, ademas de como hemos dicho antes, incluso como character tampoco estan en el mismo formato por lo que deberemos normalizar las unidades de varias variables al convertirlas de character a numeric o integer (cuantitativas continuas o cuantitativas discretas). O incluso tambien si fuera la conversion a cualitativas si correspondiense.
+Como hemos visto arriba, muchas variables cuantitivas se cargaron por default como character, ademas de como hemos dicho antes, incluso como character tampoco estan en el mismo formato por lo que deberemos normalizar las unidades de varias variables al convertirlas de character a numeric o integer (cuantitativas continuas o cuantitativas discretas). O incluso tambien normalizar si fuera la conversion a cualitativas si correspondiense.
 
-```{r}
-
-```
-
+Tambien puede evidenciarse arriba que tenemos incluso casos de variables categoricas ocultas como cuantitativas, como por ej la variable Preffered_Foot, que toma valores 1 o 2. Fue importada por default por la funcion read.csv como integer, siendo posible considerarla como Categorica Nominal.
 
 
 # 2. Verificar duplicación de registros
+
+Verifiquemos si hay registros duplicados a partir del valor ID. En caso que existan duplicados, seleccionaremos el registro con menor numero de NAs en las variables.
+
+
+```{r}
+length(fifa2017$ID)
+length(unique(fifa2017$ID))
+```
+Como vemos aqui, la cantidad de observaciones son coincidentes con y sin aplicar la funcion unique, por lo que podemos concluir que no existen duplicados por el campo ID.
 
 
 # 3. Normalización de los datos cuantitativos
@@ -118,12 +127,116 @@ resultado esperado. Por lo tanto, se recomienda mostrar un fragmento del archivo
 evitar mostrar todo el conjunto de datos, se puede mostrar una parte del mismo, con las funciones head y/o
 tail.
 
+Puntos a tener en cuenta:
 
+    - En los datos numéricos, el símbolo de separador decimal es el punto y no la coma.
+    - Verificar que la variable Rating esté entre 0 y 100.
+    - La variable Height se ha de expresar en cm con 3 dígitos sin decimales. Para facilitar la lectura y tratamiento del fichero deben ser numéricas, por lo tanto se debe quitar el símbolo de cm.
+    - La variable Weight se ha de expresar en kg, sin decimales. Si hay decimales, se ha de truncar el valor. Para facilitar la lectura y tratamiento del fichero deben ser numéricas, por lo tanto se debe quitar el símbolo de kg.
+  
 ## 3.1. Rating
+
+Primero verificamos jugadores que tenga un rating fuera del rango de 0 a 90:
+
+```{r}
+fifa2017[!(fifa2017$Rating >= 0 & fifa2017$Rating <=90), c("ID","Name", "Rating")]
+```
+Por lo que vemos arriba justamente son los cracks los que tienen valores por encima de 90, pero dicho esto y lo que estamos visualizando, no existen jugadores con un rating por encima de 100, ni mucho menos por debajo de 0. Reconfirmemoslo con la siguiente sentencia:
+
+```{r}
+fifa2017[!(fifa2017$Rating >= 0 & fifa2017$Rating <=100), c("ID","Name", "Rating")]
+```
 
 ## 3.2. Height
 
+Como sabemos y vemos aqui debemos llevar a la misma unidad la variable altura, a cm y sin decimales:
+
+```{r}
+fifa2017$Height[1:20]
+```
+Como primer paso verifiquemos que la cantidad de missing values, y la cantidad de observaciones con la unidad cm y m coincida con el total de observaciones: 17588
+
+```{r}
+length(grep(' cm', fifa2017$Height)) + 
+length(grep(' m', fifa2017$Height)) +
+table(is.na(fifa2017$Height))["TRUE"]
+```
+Dicho, esto llevemos ahora todos las observaciones en metros directamente a centimetros aqui:
+
+```{r}
+fifa2017$Height = str_replace_all(fifa2017$Height, "[cm ,]", "")
+fifa2017$Height = as.integer(str_pad(fifa2017$Height, 3, side = c("right"), pad = "0"))
+```
+
+Verifiquemos que el tipo de dato sea integer y grafiquemos un sencillo grafico de barras para visualizar si los datos de altura quedaron ok
+
+```{r}
+class(fifa2017$Height)
+#ggplot(data=as.data.frame(fifa2017$Height), aes(x=fifa2017$Height))+geom_bar()
+barplot(table(fifa2017$Height))
+```
+
+
 ## 3.3. Weight
+
+
+La variable Weight se ha de expresar en kg, sin decimales. Si hay decimales, se ha de truncar el valor. Para facilitar la lectura y tratamiento del fichero deben ser numéricas, por lo tanto se debe quitar el símbolo de kg.
+
+Si observamos este sampleo de datos, vemos que para separar los decimales cuando la unidad es kg se usan indistintamente comas o puntos, mientras que cuando tenemos solo gramos no se usa ningun tipo de separador.
+
+```{r}
+head(fifa2017$Weight,20)
+```
+
+Hagamos un check mas para el caso de gramos:
+
+```{r}
+length(grep('gr', fifa2017$Weight))
+```
+
+Dado que son pocos registros, verifiquemos que no exista ningun tipo de separador.
+```{r}
+fifa2017[grep('gr', fifa2017$Weight),]$Weight
+```
+
+
+Por lo tanto, para obtener lo solicitado haremos:
+
+    1. Dado que el símbolo de separador decimal es el punto y no la coma, cambiaremos todos las comas por puntos
+    2. Identificamos los indices con el valor gr
+    3. Identificamos los indices con el valor kg
+    4. Para los elementos del grupo gr, les quitamos el string gr, convertimos a numerico, dividimos por 1000 para convertir a kilogramos y luego truncamos decimales.
+    5. Para los elementos del grupo kg, les quitamos el string kg, convertimos a numerico y luego truncamos decimales
+
+Veamos y ejecutemos ahora el codigo para realizar esos pasos:
+```{r}
+# Dado que el símbolo de separador decimal es el punto y no la coma, realizamos la conversion:
+fifa2017$Weight = str_replace_all(fifa2017$Weight, ",", ".")
+
+# Detectamos los indices con unidad kg y los correspondientes a gr
+indexes_gr = grep('gr', fifa2017$Weight)
+indexes_kg = grep('kg', fifa2017$Weight)
+
+
+# Chequeamos cantidades
+length(indexes_gr)
+length(indexes_kg)
+
+
+# Hacemos una previsualizacion de ambos
+head(fifa2017[indexes_gr,]$Weight,10)
+head(fifa2017[indexes_kg,]$Weight,10)
+
+# Dividimos por 1000 los valores correspondientes a gr y truncamos los decimales
+fifa2017[indexes_gr,]$Weight = trunc(as.numeric(str_replace_all(fifa2017[indexes_gr,]$Weight, "[ gr]", ""))/1000)
+
+# Convertimos los valores correspondientes a kg a numerico y truncamos los decimales
+fifa2017[indexes_kg,]$Weight = trunc(as.numeric(str_replace_all(fifa2017[indexes_kg,]$Weight, "[ kg]", "")))
+
+# previsualicemos algunos valores
+head(fifa2017$Weight,20)
+```
+
 
 
 # 4. Normalización de los datos cualitativos
@@ -133,10 +246,89 @@ Inspeccionar los valores de los datos cualitativos y realizar las transformacion
 
 ## 4.1. Name y Nationality
 
+Las variables Name y Nationality no han de tener espacios en blanco antes o después de su valor. El valor para estas variables han de ser mayúsculas en la primera letra de cada palabra, tal como "Lionel Messi".
+
+Como vemos en este sampleo, puede verificarse algunos de los puntos comentado en el parrafo anterior, incluso para los paises en algunos casos esta todo en mayuscula, por ej: ENGLAND, por lo que debera convertirse a England, segun lo definido.
+
+```{r}
+head(fifa2017$Name,20)
+tail(fifa2017$Nationality,20)
+```
+Ejecutemos el codigo para realizar la transformacion:
+```{r}
+# quitamos espacios en los extremos
+fifa2017$Name=str_trim(fifa2017$Name, side = c("both"))
+fifa2017$Nationality=str_trim(fifa2017$Nationality, side = c("both"))
+
+# convertimos todo a minusculas, para igualar primero todas las palabras, por ej England e ENGLAND, a england
+fifa2017$Name = tolower(fifa2017$Name)
+fifa2017$Nationality = tolower(fifa2017$Nationality)
+
+
+# para finalmente convertir a mayuscula cada palabra de cada cada observacion
+fifa2017$Name = toTitleCase(fifa2017$Name)
+fifa2017$Nationality = toTitleCase(fifa2017$Nationality)
+```
+
+Volvamos a verificar que se haya realizado el ajuste correctamente:
+```{r}
+head(fifa2017$Name,20)
+tail(fifa2017$Nationality,20)
+```
 ## 4.2. Preffered_Foot
+
+La variable Preffered_Foot ha de tener los valores Left y Right que corresponde a los valores actuales de 1 y 2, respectivamente.
+
+En primer instancia verifiquemos los valores posibles de esta variable:
+
+```{r}
+table(fifa2017$Preffered_Foot)
+```
+
+Veamos el codigo para realizar la transformacion:
+```{r}
+fifa2017[(fifa2017$Preffered_Foot==1),]$Preffered_Foot = 'Left'
+fifa2017[(fifa2017$Preffered_Foot==2),]$Preffered_Foot = 'Right'
+```
+
+Verifiquemos el resultado de la modificacion:
+
+```{r}
+table(fifa2017$Preffered_Foot)
+```
+
 
 ## 4.3. Work_Rate
 
+La variable Work_Rate se basa en la combinación de dos de estas tres categorías: Low, Medium y High. Verificar que se cumple y en caso contrario, hay que corregirlo. Puedes encontrar los nombres de las categorías cortado con tres letras.
+
+En primer instancia verifiquemos los valores posibles de esta variable:
+
+```{r}
+table(fifa2017$Work_Rate)
+sum(table(fifa2017$Work_Rate))
+```
+Por lo que vemos arriba, deberemos por ej renombrar casos como:
+Hig a High 
+Med a Medium 
+
+```{r}
+
+fifa2017$Work_Rate = str_replace(fifa2017$Work_Rate, "Hig /", "High /")
+fifa2017$Work_Rate = str_replace(fifa2017$Work_Rate, "/ Hig$", "/ High")
+fifa2017$Work_Rate = str_replace(fifa2017$Work_Rate, "Med /", "Medium /")
+fifa2017$Work_Rate = str_replace(fifa2017$Work_Rate, "/ Med$", "/ Medium")
+
+```
+
+Vemos ahora como se han reagrupado correctamente las observaciones
+```{r}
+table(fifa2017$Work_Rate)
+```
+y los valores totales siguen cuadrando:
+```{r}
+sum(table(fifa2017$Work_Rate))
+```
 
 # 5. Posibles inconsistencias y variables tipo fecha
 
@@ -144,8 +336,14 @@ Verificar si existen inconsistencias entre algunas variables. Por otra parte, al
 
 
 ## 5.1. Club_Joining
+  6. Verificar que la variable Club_Joining está en el rango de los años 1990 a 2017. En caso de haber algún registro que no compla la condición, indicar el número de registro, Name y Club_joining.
+
 ## 5.2. Contract_Expiry >= Club_Joining?
+  7. Verificar que el año de expiración del contracto (Contract_Expiry) no es inferior al año de inicio del contracto(Club_Joining). En caso de haber algún registro que no cumple la condición, indicar el número de registro, Name, Club_Joining y Contract_Expiry.
+
 ## 5.3. Revisar si la edad corresponde a la fecha de nacimiento
+  8. Verificar que la edad (Age) en la fecha 1/1/2017 corresponde a la calculada con la fecha de nacimiento (Birth_Date). En caso de haber algún registro que no cumpla la condición, modificar la edad en función del valor obtenido con la fecha de nacimiento.
+
 
 # 6. Valores atípicos
 Revisar si hay valores atípicos en la variable Height y Weight. Si es así, y se trata de un valor anormalmente alto o bajo, se recomienda sustituir el valor por “NA”.
@@ -168,6 +366,10 @@ Realice un breve estudio descriptivo de las variables cuantitativas una vez depu
 tabla con medidas de tendencia central y de dispersión, tanto robustas como no robustas. Haga un breve
 comentario sobre los resultados obtenidos entre estos tipos de medidas en todas las variables.
 
+Rating
+Height
+Weight
+Age
 
 # 9. Análisis de Componentes Principales (PCA)
 
@@ -185,4 +387,7 @@ variables originales e indicar que tiene de especial este punto.
 
 El resultado del pre procesamiento del archivo fifa.csv se guarda en el archivo “fifa_clean.csv”.
 
+# Referencias
 
+https://www.rdocumentation.org/packages/stringr/versions/1.4.0
+https://stackoverflow.com/questions/6364783/capitalize-the-first-letter-of-both-words-in-a-two-word-string
