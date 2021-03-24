@@ -1,0 +1,54 @@
+[
+  {
+    "url": "https://api.github.com/repos/pandas-dev/pandas/issues/20015",
+    "repository_url": "https://api.github.com/repos/pandas-dev/pandas",
+    "labels_url": "https://api.github.com/repos/pandas-dev/pandas/issues/20015/labels{/name}",
+    "comments_url": "https://api.github.com/repos/pandas-dev/pandas/issues/20015/comments",
+    "events_url": "https://api.github.com/repos/pandas-dev/pandas/issues/20015/events",
+    "html_url": "https://github.com/pandas-dev/pandas/pull/20015",
+    "id": 302742972,
+    "number": 20015,
+    "title": "DOC: enable matplotlib plot_directive to include figures in docstrings",
+    "user": {
+      "login": "jorisvandenbossche",
+      "id": 1020496,
+      "avatar_url": "https://avatars2.githubusercontent.com/u/1020496?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/jorisvandenbossche",
+      "html_url": "https://github.com/jorisvandenbossche",
+      "followers_url": "https://api.github.com/users/jorisvandenbossche/followers",
+      "following_url": "https://api.github.com/users/jorisvandenbossche/following{/other_user}",
+      "gists_url": "https://api.github.com/users/jorisvandenbossche/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/jorisvandenbossche/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/jorisvandenbossche/subscriptions",
+      "organizations_url": "https://api.github.com/users/jorisvandenbossche/orgs",
+      "repos_url": "https://api.github.com/users/jorisvandenbossche/repos",
+      "events_url": "https://api.github.com/users/jorisvandenbossche/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/jorisvandenbossche/received_events",
+      "type": "User",
+      "site_admin": false
+    },
+    "labels": [
+
+    ],
+    "state": "open",
+    "locked": false,
+    "assignee": null,
+    "assignees": [
+
+    ],
+    "milestone": null,
+    "comments": 0,
+    "created_at": "2018-03-06T15:20:53Z",
+    "updated_at": "2018-03-06T15:21:59Z",
+    "closed_at": null,
+    "author_association": "OWNER",
+    "pull_request": {
+      "url": "https://api.github.com/repos/pandas-dev/pandas/pulls/20015",
+      "html_url": "https://github.com/pandas-dev/pandas/pull/20015",
+      "diff_url": "https://github.com/pandas-dev/pandas/pull/20015.diff",
+      "patch_url": "https://github.com/pandas-dev/pandas/pull/20015.patch"
+    },
+    "body": "This adds the matplotlib.sphinxext.plot_directive as extension to conf.py, and added a small example in the `Series.plot.line` docstring"
+  }
+]
