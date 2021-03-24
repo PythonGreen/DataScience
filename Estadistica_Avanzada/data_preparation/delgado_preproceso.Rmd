@@ -67,7 +67,7 @@ Examinar también los valores resumen de cada tipo de variable.
 Como primer paso definimos que librerias estaremos usando. Para ellos generamos un vector con todas las posibles librerias que necesitaremos, instalamos las que no tengamos, para finalmente mediante el uso de lapply cargarlas.
 
 ```{r}
-packages <- c("corrplot", "stringr","ggplot2", "stats", "tools", "eeptools")
+packages <- c("corrplot", "stringr","ggplot2", "stats", "tools", "eeptools", "gridExtra", "psych")
 new <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new)) install.packages(new)
 foo=lapply(packages, require, character.only=TRUE)
@@ -232,6 +232,7 @@ fifa2017[indexes_gr,]$Weight = trunc(as.numeric(str_replace_all(fifa2017[indexes
 
 # Convertimos los valores correspondientes a kg a numerico y truncamos los decimales
 fifa2017[indexes_kg,]$Weight = trunc(as.numeric(str_replace_all(fifa2017[indexes_kg,]$Weight, "[ kg]", "")))
+fifa2017$Weight = as.integer(fifa2017$Weight)
 
 # previsualicemos algunos valores
 head(fifa2017$Weight,20)
@@ -436,29 +437,115 @@ Volvamos a verificar que ahora ya no existan  diferencias:
 nrow(fifa2017[fifa2017$Age != calculated_ages, ])
 ```
 
-Hagamos un pequeño sampleo del resultado 
+Hagamos un pequeño sampleo del resultado de ambos grupos, de los ok, como de los que se corrigieron
 ```{r}
 cols = c("Name", "Age", "Birth_Date")
-head(fifa2017[,cols],20)
+head(fifa2017[-index_ages_to_fix,cols],20)
+head(fifa2017[index_ages_to_fix,cols],20)
 ```
 
 
-fifa2017 <- read.csv("fifa_raw.csv", stringsAsFactors = FALSE, header=TRUE)
+
 
 
 # 6. Valores atípicos
 Revisar si hay valores atípicos en la variable Height y Weight. Si es así, y se trata de un valor anormalmente alto o bajo, se recomienda sustituir el valor por “NA”.
 
+
+Como vemos aqui no hay valores centinelas extremos, ya que para la altura tenemos un valor maximo de 207 cm y minimo de 155 cm, que pueden ser valores normales para jugadores de futbol, de hecho la media es de 181cms.
+Caso similar tenemos para el peso con valores maximos de 110kg y minimos de 48kg.
+En ambos casos tenemos 3 NA.
+
+```{r}
+summary(fifa2017$Height)
+summary(fifa2017$Weight)
+```
+Dicho esto creemos que no hace falta reasignar a ninguno de esos valores extremos el valor NA, para asi no perder capacidad de analisis de la informacion.
+
+Pero que pasa si graficamos estos valores en barplots y boxplots?
+
+```{r}
+
+hbp=ggplot(fifa2017,aes(x=Height,fill=Height))+geom_boxplot(fill="lightblue")+theme_bw()
+hb=ggplot(fifa2017,aes(x=Height,fill=Height))+geom_bar(fill="lightblue")+theme_bw()
+
+wbp=ggplot(fifa2017,aes(x=Weight,fill=Weight))+geom_boxplot(fill="lightblue")+theme_bw()
+wb=ggplot(fifa2017,aes(x=Weight,fill=Weight))+geom_bar(fill="lightblue")+theme_bw()
+
+grid.arrange(grobs = list(hbp, wbp, hb, wb) , nrow = 2, ncol = 2)
+
+```
+
+Al verlo graficamente, notamos que los valores extremos que nos dio el summary en principio son valores "normales" al ojo humano pero que se "alejan" de la tendencia central de nuestra muestra de datos.
+
+Con esta comando podemos de que valores se tratan estos "outliers" de la muestra:
+```{r}
+# Valores atipicos de altura
+sort(boxplot.stats(fifa2017$Height)$out)
+# Valores atipicos en el peso
+sort(boxplot.stats(fifa2017$Weight)$out)
+```
+
+Podriamos optar aqui por convertirlos a NA por ser "outliers" en esta muestra, pero dado que consideramos que no son valores "anormalmente" altos o bajos en princio los dejaremos, ya que es posible que existan jugadores de 160cm como de 207cm o de 50kg como de 110kg. Es verdad que es poco probable encontrar a hombres de menos de 55kg, pero puede darse, no es un valor "incorrecto".
+
+
+Ademas tal como se menciona en los recursos de la asignatura y es nuestro caso: "En algunas ocasiones el valor atipico es cambiado por «no disponible» (NA) y, en otras ocasiones, se queda tal como está ya que puede ser un valor real pero muy poco frecuente."
+
+Veamos un ejemplo de jugador de bajo peso:
+
+```{r}
+cols = c("Name", "Age", "Weight", "Height", "Nationality")
+fifa2017[fifa2017$Weight == 48,cols]
+```
+
+En los puntos siguientes de esta practica igualmente podremos validar al momento de realizar el EDA y PCA que sucede con y sin estos valores no tan "tipicos" (si es que vemos que estos valores desvirtuan el analisis) simplemente convirtiendo en NA el peso y la altura de estas **pocas** observaciones que desplegamos aqui:
+
+```{r}
+# Pesos "atipicos"
+fifa2017[fifa2017$Weight %in% boxplot.stats(fifa2017$Weight)$out, cols]
+
+# Alturas "atipicas"
+fifa2017[fifa2017$Height %in% boxplot.stats(fifa2017$Height)$out, cols]
+```
+
+
 # 7. Imputación de valores
 
 Buscar en las variables Weight y Height donde haya valores perdidos (NA) y realice una imputación de
-valores.
-Para realizar una imputación de valores necesita hacer una regresión lineal que tenga como variable a predecir
+valores. Para realizar una imputación de valores necesita hacer una regresión lineal que tenga como variable a predecir
 la variable con la NAs. Esto significa que hay que realizar dos modelos de regresión lineal, uno para predecir
 los valores NAs en Weight a partir de la variable Height. El otro es precisamente al revés, predecir los valores
-NAs en Height a partir de Weight.
-La función para hacer regresión lineal es lm().
+NAs en Height a partir de Weight. La función para hacer regresión lineal es lm().
+
 Muestre el resultado de la imputación y de la variable explicativa en aquellos casos donde había un NA.
+
+Identifiquemos primero los registros con NA de ambas variables
+```{r}
+na_height = which(is.na(fifa2017$Height))
+na_weight = which(is.na(fifa2017$Weight))
+cols = c("Name", "Age", "Weight", "Height", "Nationality")
+fifa2017[na_height, cols]
+fifa2017[na_weight, cols]
+```
+Creemos y visualicemos los modelos
+```{r}
+height_model = lm(fifa2017$Height ~ fifa2017$Weight)
+weight_model = lm(fifa2017$Weight ~ fifa2017$Height)
+height_model
+weight_model
+```
+
+Imputemos los valores obtenidos por la prediccion y visualicemos los resultados:
+```{r}
+fifa2017[na_height, "Height"] = as.integer(predict(height_model, newdata = fifa2017[na_height,])[na_height])
+fifa2017[na_weight, "Weight"] = as.integer(predict(weight_model, newdata = fifa2017[na_weight,])[na_weight])
+
+# Asi fue la prediccion para las alturas
+fifa2017[na_height, cols]
+# Y asi el resultado de la prediccion de los pesos
+fifa2017[na_weight, cols] 
+```
+
 
 
 # 8. Estudio descriptivo de las variables cuantitativas.
@@ -467,10 +554,48 @@ Realice un breve estudio descriptivo de las variables cuantitativas una vez depu
 tabla con medidas de tendencia central y de dispersión, tanto robustas como no robustas. Haga un breve
 comentario sobre los resultados obtenidos entre estos tipos de medidas en todas las variables.
 
-Rating
-Height
-Weight
-Age
+Luego de haber normalizado la mayoria de las variables veamos como quedo nuestro dataframe:
+
+```{r}
+str(fifa2017)
+```
+
+Quedemosnos con algunas variables cuantitivas para realizar un estudio descriptivo
+```{r}
+cols = c("Rating", "Height", "Weight", "Age", "Ball_Control", "Dribbling", "Freekick_Accuracy", "Shot_Power")
+```
+
+Tal como se comenta en los recursos de aprendizaje se puede hacer uso del paquete psych para utilizar estimadores robustos a la hora de describir las variables de una muestra.
+
+Pero antes de continuar realizamos un breve repaso de los estimadores mas comunes:
+  
+  **Estimadores de Tendencia Central:**
+    
+    - El estimador de tendencia central clásico es la media aritmética. Tiene muy buenas propiedades; es un estimador insesgado, 
+    pero su estimación está muy influida por los valores atípicos.
+    
+    - La mediana es uno de los estimadores robustos más conocidos para medir la tendencia central de los datos.
+    
+    - Otro estimador robusto para medir la tendencia central es la media recortada (trimmed mean).
+    
+    - Una variante de la media recortada es la media winsorizada (winsorized mean).
+    
+  **Estimadores de Dispersion:**
+  
+    - Para medir la dispersión de los datos el estimador más habitual es la desviación estándar, que no es un estimador robusto.
+    
+    - El rango intercuartílico (RIC) y la desviación absoluta respecto de la mediana (DAM) son alternativas robustas a la desviación estándar
+
+
+Ahora si veamos estos estimadores en numeros con la ayuda de psych
+
+```{r}
+describe(fifa2017[cols], na.rm = TRUE,  IQR = TRUE, trim=.05 )
+```
+
+Si nos focalizamos en los estimadores de tendencia central, puede verse para la mayoria de las variables que la media recortada de un 5% se acerca mas a la mediana, estimador robusto, que la media aritmetica.
+
+Mientras que la DAM y el RIC, en algunos casos mejora los valores mostrados por la desviacion standar, como ser el caso de Age.
 
 # 9. Análisis de Componentes Principales (PCA)
 
@@ -491,5 +616,10 @@ El resultado del pre procesamiento del archivo fifa.csv se guarda en el archivo 
 # Referencias
 
 https://www.rdocumentation.org/packages/stringr/versions/1.4.0
+
 https://stackoverflow.com/questions/6364783/capitalize-the-first-letter-of-both-words-in-a-two-word-string
+
 https://rdrr.io/cran/eeptools/man/age_calc.html
+
+https://www.rdocumentation.org/packages/psych/versions/2.0.12
+
