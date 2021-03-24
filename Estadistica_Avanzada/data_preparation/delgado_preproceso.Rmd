@@ -67,7 +67,7 @@ Examinar también los valores resumen de cada tipo de variable.
 Como primer paso definimos que librerias estaremos usando. Para ellos generamos un vector con todas las posibles librerias que necesitaremos, instalamos las que no tengamos, para finalmente mediante el uso de lapply cargarlas.
 
 ```{r}
-packages <- c("corrplot", "stringr","ggplot2", "stats", "tools")
+packages <- c("corrplot", "stringr","ggplot2", "stats", "tools", "eeptools")
 new <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new)) install.packages(new)
 foo=lapply(packages, require, character.only=TRUE)
@@ -336,13 +336,114 @@ Verificar si existen inconsistencias entre algunas variables. Por otra parte, al
 
 
 ## 5.1. Club_Joining
-  6. Verificar que la variable Club_Joining está en el rango de los años 1990 a 2017. En caso de haber algún registro que no compla la condición, indicar el número de registro, Name y Club_joining.
+
+Verificar que la variable Club_Joining está en el rango de los años 1990 a 2017. En caso de haber algún registro que no cumpla la condición, indicar el número de registro, Name y Club_joining.
+
+Para esto primero convertimos el campo a date, ya que como vemos es del tipo character:
+```{r}
+class(fifa2017$Club_Joining)
+typeof(fifa2017$Club_Joining)
+```
+Luego verificamos si hay algun formato incorrecto al intentar convertir a date:
+```{r}
+indexs_date_ok = which(!is.na(as.Date(fifa2017$Club_Joining, "%m/%d/%Y")))
+indexs_date_nook =  which(is.na(as.Date(fifa2017$Club_Joining, "%m/%d/%Y")))
+length(indexs_date_ok)
+length(indexs_date_nook)
+```
+Como vemos no hay ninguno, solo 1 registro vacio.
+```{r}
+fifa2017[indexs_date_nook,]$Club_Joining
+```
+
+Prosigamos:
+
+```{r}
+fifa2017$Club_Joining = as.Date(fifa2017$Club_Joining, "%m/%d/%Y")
+head(fifa2017$Club_Joining)
+```
+
+Para finalmente ver los jugadores donde su Club_Joining no está en el rango de los años 1990 a 2017, mostrando su ID, Nombre y Fecha.
+
+```{r}
+# Previsualizamos la cantidad de jugadores distribuidos por año
+table(format(fifa2017$Club_Joining, format = "%Y"))
+
+# Mostramos los que no cumplen la condicion requerida
+cols = c("ID", "Name", "Club_Joining")
+fifa2017[!(fifa2017$Club_Joining >= as.Date('1990-01-01') & fifa2017$Club_Joining < as.Date('2018-01-01') ), cols ]
+```
+
+Como finalmente vemos todos estan en el rango definido, ya que estamos considerando del 1 de enero de 1990 al 31 de diciembre de 2017.
 
 ## 5.2. Contract_Expiry >= Club_Joining?
-  7. Verificar que el año de expiración del contracto (Contract_Expiry) no es inferior al año de inicio del contracto(Club_Joining). En caso de haber algún registro que no cumple la condición, indicar el número de registro, Name, Club_Joining y Contract_Expiry.
+Verificar que el año de expiración del contracto (Contract_Expiry) no es inferior al año de inicio del contracto(Club_Joining). En caso de haber algún registro que no cumple la condición, indicar el número de registro, Name, Club_Joining y Contract_Expiry.
+
+
+Realizamos primero un sampleo de las observaciones por Contract_Expiry.
+```{r}
+table(fifa2017$Contract_Expiry)
+```
+
+Para luego mostrar lo solicitado
+```{r}
+cols = c("ID", "Name", "Club_Joining", "Contract_Expiry")
+years_club_Joining = format(fifa2017$Club_Joining, format = "%Y")
+fifa2017[!(fifa2017$Contract_Expiry >= years_club_Joining ), cols ]
+```
+
+Como puede verse no hay registros donde el año de expiracion sea anterior al año de incorporacion al equipo. 
+
+Si es verdad que hay casos de jugadores que se unen a un equipo y su contrato expira ese mismo año, como por ejemplo estos casos:
+```{r}
+nrow(fifa2017[fifa2017$Contract_Expiry == years_club_Joining,])
+head(fifa2017[fifa2017$Contract_Expiry == years_club_Joining, cols])
+```
+
 
 ## 5.3. Revisar si la edad corresponde a la fecha de nacimiento
-  8. Verificar que la edad (Age) en la fecha 1/1/2017 corresponde a la calculada con la fecha de nacimiento (Birth_Date). En caso de haber algún registro que no cumpla la condición, modificar la edad en función del valor obtenido con la fecha de nacimiento.
+
+Verificar que la edad (Age) en la fecha 1/1/2017 corresponde a la calculada con la fecha de nacimiento (Birth_Date). En caso de haber algún registro que no cumpla la condición, modificar la edad en función del valor obtenido con la fecha de nacimiento.
+
+En primer instancia verifiquemos el campo birth_date y age
+
+```{r}
+table(fifa2017$Age)
+class(fifa2017$Birth_Date)
+head(fifa2017$Birth_Date)
+```
+
+
+
+Ahora asumiendo que se quiere calcular las edades al 1 de enero de 2017, vamos a verificar si el campo edad que nos viene informado en el csv es igual o no a la diferencia entre esta fecha (1/1/2017) y la fecha de nacimiento de cada jugador:
+```{r}
+# primero convertimos a fecha el birth_date
+fifa2017$Birth_Date = as.Date(fifa2017$Birth_Date, "%m/%d/%Y")
+
+calculated_ages =  trunc(age_calc(fifa2017$Birth_Date, enddate = as.Date('2017-01-01') , units = "years", precise = TRUE))
+
+nrow(fifa2017[fifa2017$Age != calculated_ages, ])
+```
+Como vemos hay 5561 casos donde la edad no es la misma, ajustemos esos valores de edad al 1/1/2017
+
+```{r}
+index_ages_to_fix = which(fifa2017$Age != calculated_ages)
+fifa2017[index_ages_to_fix,]$Age = calculated_ages[index_ages_to_fix]
+```
+
+Volvamos a verificar que ahora ya no existan  diferencias:
+```{r}
+nrow(fifa2017[fifa2017$Age != calculated_ages, ])
+```
+
+Hagamos un pequeño sampleo del resultado 
+```{r}
+cols = c("Name", "Age", "Birth_Date")
+head(fifa2017[,cols],20)
+```
+
+
+fifa2017 <- read.csv("fifa_raw.csv", stringsAsFactors = FALSE, header=TRUE)
 
 
 # 6. Valores atípicos
@@ -391,3 +492,4 @@ El resultado del pre procesamiento del archivo fifa.csv se guarda en el archivo 
 
 https://www.rdocumentation.org/packages/stringr/versions/1.4.0
 https://stackoverflow.com/questions/6364783/capitalize-the-first-letter-of-both-words-in-a-two-word-string
+https://rdrr.io/cran/eeptools/man/age_calc.html
