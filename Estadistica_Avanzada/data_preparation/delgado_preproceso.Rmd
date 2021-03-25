@@ -607,7 +607,34 @@ Por ultimo, ¿hay algún punto más fuera de la nube de puntos?, si es así pued
 variables originales e indicar que tiene de especial este punto.
 
 
+Ante todo verificamos que exista correlacion entre algunas de las variables para que la aplicacion de PCA tenga sentido
+```{r}
+cols = c("Rating", "Height", "Weight", "Age")
+cor(fifa2017[cols])
+corrplot(cor(fifa2017[cols]), type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+```
+Al menos tenemos una alta correlacion entre el peso y la altura, como era de esperar. Y poca entre el rating y la edad. Y casi nula entre estos 2 grupos de variables.
 
+Veamos la proporcion de varianza explicada con cada variable aplicando PCA mediante el uso de la matriz de las correlaciones. Utilizamos este metodo dado que las variables de analisis tienen magnitudes distintas, cm para la altura, kg para el peso, y sin unidades para la edad y el rating.
+
+De hecho si hacemos la comparacion entre ambos metodos vemos que si bien con ambos necesitamos 3 componentes para explicar mas del 90% de la varianza, es con con la matriz de correlaciones cuando obtenemos un minimo mejor porcentaje (94.31% vs 93.83)
+```{r}
+PCA.cor <- prcomp(x=fifa2017[cols], center = TRUE, scale.= TRUE)
+PCA.cov <- prcomp(x=fifa2017[cols], center = TRUE, scale.= FALSE)
+summary(PCA.cor)
+summary(PCA.cov)
+```
+Vale aclarar que si usaramos por ejemplo solo dos componentes, con la matriz de covarianzas obtenemos una mayor varianza explicada a pesar que las magnitudes de las variables sean diferentes, 84.25% vs  80.72%. Por lo que si nos fuera suficiente solo un 80% minimo de la varianza podriamos optar por usar las dos primeras componenetes usando covarianzas. 
+
+Tal como se describe en los recursos de aprendizaje, la varianza de cada componente principal es el valor propio y se calcula elevando al cuadrado PCA.cov$sdev (o PCA.cor$sdev para correlaciones). Para obtener el porcentaje de la varianza explicada en cada componente principal hay que dividir cada valor propio entre la suma de todos los valores propios, y da un resultado de 51.15%, 33.1%,  9.5%, 6.1% (covarianzas). Así que como se dijo en el parrafo anterior las 2 primeras componentes puede resumir un 84.25% de varianza de las cuatro variables originales. 
+
+Dicho todo esto, se podria realizar una reduccion a dos componentes usando covarianzas si es que con un minimo de 80% de la varianza estamos ok, o una reduccion a 3 componentes usando correlaciones si es que necesitamos explicar un minimo del 90%.
+
+
+```{r}
+
+
+```
 
 # 10. Archivo final
 
