@@ -1,13 +1,19 @@
 ---
-title: "A1 - PreProcesado de Datos"
+title: 'A1 - PreProcesado de Datos'
 author: "Pablo A. Delgado"
 date: '`r format(Sys.Date(),"%e de %B, %Y")`'
 output:
   html_document:
+    highlight: default
+    theme: cosmo
     toc: yes
+    toc_depth: 4
+  word_document: default
   pdf_document:
+    highlight: zenburn
     toc: yes
----
+---    
+    
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -67,7 +73,7 @@ Examinar también los valores resumen de cada tipo de variable.
 Como primer paso definimos que librerias estaremos usando. Para ellos generamos un vector con todas las posibles librerias que necesitaremos, instalamos las que no tengamos, para finalmente mediante el uso de lapply cargarlas.
 
 ```{r}
-packages <- c("corrplot", "stringr","ggplot2", "stats", "tools", "eeptools", "gridExtra", "psych")
+packages <- c("corrplot", "stringr","ggplot2", "stats", "tools", "eeptools", "gridExtra", "psych","factoextra")
 new <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new)) install.packages(new)
 foo=lapply(packages, require, character.only=TRUE)
@@ -613,6 +619,7 @@ cols = c("Rating", "Height", "Weight", "Age")
 cor(fifa2017[cols])
 corrplot(cor(fifa2017[cols]), type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
 ```
+
 Al menos tenemos una alta correlacion entre el peso y la altura, como era de esperar. Y poca entre el rating y la edad. Y casi nula entre estos 2 grupos de variables.
 
 Veamos la proporcion de varianza explicada con cada variable aplicando PCA mediante el uso de la matriz de las correlaciones. Utilizamos este metodo dado que las variables de analisis tienen magnitudes distintas, cm para la altura, kg para el peso, y sin unidades para la edad y el rating.
@@ -630,15 +637,159 @@ Tal como se describe en los recursos de aprendizaje, la varianza de cada compone
 
 Dicho todo esto, se podria realizar una reduccion a dos componentes usando covarianzas si es que con un minimo de 80% de la varianza estamos ok, o una reduccion a 3 componentes usando correlaciones si es que necesitamos explicar un minimo del 90%.
 
+Esta conclusiones fueron realizada suponiendo que queremos por definicion explicar tanto porcentaje de la varianza, pero veamos ahora con dos de los criterios habituales para decidir el número de componentes principales a seleccionar: 
+
+- la regla de Kaiser-Guttman y 
+
+- el test de scree
+
+## Eleccion del numero de componentes
+
+### Componentes con Covarianzas
+
+En el caso de realizar el PCA con la matriz de covarianzas, los valores propios son 83.95979 54.33519 15.73471 10.12013, y su valor medio es 41.03745. Aplicando el criterio de Kaiser-Gutman es suficiente con seleccionar 2 dos primeras componentes.
 
 ```{r}
+ValoresPropios.cov = PCA.cov$sdev**2
+ValoresPropios.cov
+mean(ValoresPropios.cov)
+```
 
+Mientras que con el test de scree vemos que la curva comienza a suavizarse desde el 3, por lo que con las dos primeras componentes estariamos ok, incluso podria usarse la 3ra.
+```{r}
+screeplot(PCA.cov, type = c("lines"))
+```
+
+
+### Componentes con Correlaciones
+
+Mientras que si aplicamos PCA con la matriz de correlaciones, sus valores propios son 1.8968406 1.3319478 0.5437291 0.2274825, y 1 es el valor medio. Según el criterio de Kaiser-Gutman se seleccionaría solo la primera componenete. Por lo que hay coincidencia con covarianzas.
+
+
+```{r}
+ValoresPropios.cor = PCA.cor$sdev**2
+ValoresPropios.cor
+mean(ValoresPropios.cor)
+```
+Y aqui con scree no queda muy claro donde esta el codo, pero podria ser en 3.
+
+```{r}
+screeplot(PCA.cor,  npcs = min(10, length(PCA.cor$sdev)),type = c("lines"))
+```
+
+### Representación de los datos en dimensión reducida
+
+```{r}
+# % de varianza explicada en cada componente principal, usando covarianzas
+var.exp.cov <- (PCA.cov$sdev^2 / sum(PCA.cov$sdev^2))*100 
+
+plot(PCA.cov$x[,1],PCA.cov$x[,2],
+xlab = paste("CP1 (", round(var.exp.cov[1],2),"%)"),
+ylab = paste("CP2 (", round(var.exp.cov[2],2),"%)"),
+main = "Gráfico PCA basado en la covarianza",
+col=c("lightblue")
+ )
+
+# % de varianza explicada en cada componente principal, usando correlaciones
+var.exp.cor <- (PCA.cor$sdev^2 / sum(PCA.cor$sdev^2))*100 
+
+plot(PCA.cor$x[,1],PCA.cor$x[,2],
+xlab = paste("CP1 (", round(var.exp.cor[1],2),"%)"),
+ylab = paste("CP2 (", round(var.exp.cor[2],2),"%)"),
+main = "Gráfico PCA basado en la correlacion",
+col=c("lightblue")
+ )
+```
+
+Por lo que vemos aqui no es posible sacar ninguna conclusion con dos componentes principales sobre solo algunas (4 variables) columnas de nuestro dataset original. Habria que agregar mas variables al dataset para aplicar PCA e incluso alguna variables sobre la que querramos clasifcar en colores para poder asi discernir entre las observaciones sobre un valor de interes.
+
+Veamos rapido una representacion agregando mas variables al aplicar PCA usando correlaciones y analicemos si obtenemos algun dato relevante.
+```{r}
+cols = c("Rating", "Height", "Weight", "Age", "Skill_Moves", "Ball_Control", "Dribbling", "Aggression", "Reactions", "Vision", "Stamina")
+corrplot(cor(fifa2017[cols]), type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+pca_fifa2017 <- prcomp(x=fifa2017[cols], center = TRUE, scale.= TRUE)
+summary(pca_fifa2017)
+
+pca_fifa2017.cor <- (pca_fifa2017$sdev^2 / sum(pca_fifa2017$sdev^2))*100 
+plot(pca_fifa2017$x[,1],pca_fifa2017$x[,2],
+xlab = paste("CP1 (", round(pca_fifa2017.cor[1],2),"%)"),
+ylab = paste("CP2 (", round(pca_fifa2017.cor[2],2),"%)"),
+main = "Gráfico PCA basado en la correlacion",
+col = c('lightblue')
+ )
 
 ```
 
+Entender el vector de loadings que forma cada componente nos puede ayudar a interpretar que clase de información capta cada componente, por ejemplo si miramos la componente 1:
+
+```{r}
+sort(pca_fifa2017$rotation[,'PC1'], decreasing =TRUE)
+```
+Vemos que para la primera componente son mas influyentes el Ball Control y el Dribbling y las menos influyentes son la altura y el peso.  Pero claro tengamos en cuenta que esta primer componente solo explica el 45% de la varianza, un valor muy bajo.
+
+Esto lo podemos visualizar con un grafico de contribucion donde veremos mas simplemente las variables originales mas representadas en cada componente:
+```{r}
+#componente 1
+fviz_contrib(pca_fifa2017,choice='var',axes=1, top = 10) 
+
+#componente 2
+fviz_contrib(pca_fifa2017,choice='var',axes=2, top = 10) 
+```
+
+Mismo podriamos combinar en un mismo grafico las dos primeras componentes para entender entre las dos cuales son las mas influyentes, veamoslo:
+
+```{r}
+fviz_cos2(pca_fifa2017,choice='var',axes=1:2)
+```
+
+Esto es importante saber ya que cuando contamos con muchas variables, podríamos decidir mostrar solo aquellas con mayor contribución.
+
+
+Y asi podriamos seguir analizando el resto de las componentes para entender que variables tienen mas pesos sobre otras, o incluso agregando todas las variables del dataset original para que sea input de PCA e ir ajustando el analisis y entender si usando todas las caracteristicas de los jugadores nos permiten descubrir insights.
+
+Veamos como se ven en un grafico de dos dimesiones al menos las primeras dos componentes, tanto aplicando pca con el dataset de 4 variables como el dataset de 11 variables que creamos posteriormente :
+
+```{r}
+biplot(x = PCA.cor, scale = 0, cex = 0.5, col = c("lightblue", "blue"))
+
+biplot(x = pca_fifa2017, scale = 0, cex = 0.5, col = c("lightblue", "blue"))
+```
+
+En esta ultimo grafico vemos en la misma direccion 3 grupos de variables, varias que implican habilidad tecnica, otra la fuerza o agresividad deportiva, y la 3ra caracteristicas fisicas. Pero podemos ver que las caracteristicas fisicas nada tienen que ver con la habilidades de un jugador. Lo mismo que la edad, para nada tiene que ver con sus habilidades.
+
+### Analisis de outliers
+```{r}
+#install.packages("remotes")
+#remotes::install_github("vqv/ggbiplot")
+library(ggbiplot)
+
+biplot_outliers <- ggbiplot(pca_fifa2017, scale = 3, obs.scale = 3, labels = 1:17588)  +
+ggtitle("Análisis de Componentes Principales")
+biplot_outliers
+```
+
+Los puntos mas alejados de la nube son el 1, 2, 4, 9, 32 y 8359. Veamos estas observaciones en el dataset:
+
+```{r}
+rows = c(1, 2, 4, 9, 32, 8359)
+fifa2017[rows,]
+```
+
+Mas alla que 3 de estos outliers sean observaciones a las que les hemos estimado peso o altura, que sean outliers la causa pueda ser que en escencia son jugadores atipicos y mucho mejores que la "media". Mientras que el 8359, si bien su peso y altura son posibles en la realidad, no son tan tipicas en el mundo de los jugadores de futbol, pero claro es un Arquero, en general son altos, pero este lo es bastante.
+A pesar de tener nosotros este conocimiento externo de las caracteristica de los jugadores, en casos de muestras no tan conocidas, una opcion seria volver a realizar PCA con todas las variables numericas como comentamos antes o realizar PCA quitando los "outliers" que tambien comentamos antes, o incluso combinacion de ambas. 
+
+Tal como estamos descubriendo el mundo del analisis de los datos no es un proceso estatico o no existe una "receta" estrica a seguir para obtener un resultado preciso. Es un proceso continuo e iterativo el cual hay que seguir hasta obtener posibles insights o el objetivo deseado.
+
+Al usar varianzas PCA es sensible a los outliers, es por eso que existen alternativas de PCA basadas en estimadores robustos tal como es ejemplificado en esta publicacion: **https://rpubs.com/Joaquin_AR/578072**
+
 # 10. Archivo final
 
-El resultado del pre procesamiento del archivo fifa.csv se guarda en el archivo “fifa_clean.csv”.
+El resultado del pre procesamiento del archivo fifa.csv se guarda en el archivo “apellido_fichero_clean.csv”.
+
+```{r}
+write.csv(fifa2017, 'delgado_fichero_clean.csv', row.names = FALSE)
+```
+
 
 # Referencias
 
