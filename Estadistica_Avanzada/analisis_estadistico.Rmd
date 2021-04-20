@@ -1,0 +1,730 @@
+---
+title: "A2 - Analisis Estadistico I"
+author: "Pablo A. Delgado"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  html_document:
+    highlight: default
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+  word_document: default
+  pdf_document:
+    latex_engine: default
+---    
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Introduccion
+
+En esta actividad se realizará un análisis estadístico descriptivo e inferencial de los datos procesados en la
+actividad 1. Recordamos que el conjunto de datos usado en la actividad previa consistía en el conjunto de
+datos Fifa.csv, que se encuentra disponible en la plataforma Kaggle: https://www.kaggle.com/artimous/complete-fifa-2017-player-dataset-global.
+
+Este conjunto de datos contiene el estilo de juego del videojuego de consola Fifa 2017, así como estadísticas
+reales de los jugadores de futbol. El conjunto de datos contiene más de 17,500 registros y 53 variables.
+
+Las principales variables que se usarán en esta actividad son:
+
+    •	Name (Nombre del jugador)
+    •	Nationality (Nacionalidad del jugador)
+    •	National_Position (Posición de juego en equipo nacional).
+    •	National_Kit (Número de equipación en equipo nacional)
+    •	Club (Nombre del club)
+    •	Club_Position (Posición de juego en club)
+    •	Club_Kit (Número de equipación en club)
+    •	Club_Joining (Fecha en la que empezó en el club)
+    •	Contract_Expire (Año finalización del contrato)
+    •	Rating (Valoración global del jugador, entre 0 y 100)
+    •	Height (Altura)
+    •	Weight (Peso)
+    •	Preffered_Foot (Pie preferido)
+    •	Birth_Date (Fecha de nacimiento)
+    •	Age (Edad)
+    •	Preffered_Position (Posición preferida)
+    •	Work_Rate (valoración cualitativa en términos de ataque-defensa)
+    •	Weak_foot (valoración de 1 a 5 de control y potencia de la pierna no preferida)
+    •	Skill_Moves (valoración de 1 a 5 de la habilidad en movimientos del jugador)
+    •	El resto de variables hacen referencia a atributos del jugador.
+    
+La descripción de los atributos se puede consultar en https://www.fifplay.com/encyclopedia. La descripción
+de las abreviaturas de la posición del jugador en el campo se puede consultar en https://www.dtgre.com/2016/10/fifa-17-position-abbreviations-acronyms.html.
+
+Puesto que el resultado del preprocesado de los datos puede ser ligeramente distinto entre las distintas
+soluciones que habéis aportado, os suministramos el fichero preprocesado. Esta actividad se realizará con el
+fichero que os suministramos, independientemente del proceso de preprocesado que hayáis realizado en la
+actividad anterior. El nombre del fichero es **fifa_clean.csv**.
+
+En esta actividad realizaremos un **análisis descriptivo e inferencial**. En especial, nos interesa investigar
+la puntuación del jugador (Rating) y otras variables como el control de pelota (Ball_Control) y la técnica
+(Dribbling). Asumimos que este conjunto de datos es una muestra representativa de los jugadores de la última
+década (población).
+
+**Nota importante a tener en cuenta para entregar la actividad**:
+
+* Es necesario entregar el archivo Rmd y el fichero de salida (PDF o html). El archivo de salida debe
+incluir: el código y el resultado de la ejecución del código (paso a paso).
+
+* Se debe respetar la misma numeración de los apartados que el enunciado.
+
+* No se pueden realizar listados completos del conjunto de datos en la solución. Esto generaría un
+documento con cientos de páginas y dificulta la revisión del texto. Para comprobar las funcionalidades
+del código sobre los datos, se pueden usar las funciones **head** y **tail** que sólo muestran unas líneas del
+fichero de datos.
+
+* Se valora la precisión de los términos utilizados (hay que usar de manera precisa la terminología de la
+estadística).
+
+* Se valora también la concisión en la respuesta. No se trata de hacer explicaciones muy largas o
+documentos muy extensos. Hay que explicar el resultado y argumentar la respuesta a partir de los
+resultados obtenidos de manera clara y concisa.
+
+* No se puede compartir código entre compañeros ni copiar código de actividades anteriores. Cada
+estudiante debe encontrar su propia solución a las preguntas de la actividad.
+
+
+# 1. Lectura del fichero
+
+Leer el fichero fifa_clean.csv. Validar que los datos leídos son correctos. Si no es así, realizar las conversiones
+oportunas.
+
+
+Como primer paso definimos que librerias estaremos usando. Para ellos generamos un vector con todas las posibles librerias que necesitaremos, instalamos las que no tengamos, para finalmente mediante el uso de lapply cargarlas.
+
+```{r}
+packages <- c("ggplot2", "gridExtra", "kableExtra", "stats", "proxy")
+new <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new)) install.packages(new)
+foo=lapply(packages, require, character.only=TRUE)
+```
+
+Dado que el input de datos es un archivo csv, y en una inspeccion visual manual hemos visto que posee como separador de columna la coma, usaremos la funcion read.csv() para cargar los datos en un dataframe. Hemos hemos podido constatar que el csv cuenta con 54 columnas y 17590 lineas, la primera linea corresponde al header y la ultima una linea en blanco, siendo asi 17588 lineas con datos, mientras que la primer columna corresponde al ID de cada fila, quedandonos 53 variables "dato" tal como especifica el enunciado
+
+Dicho esto carguemos el archivo y hagamos una verificacion rapida de las primeras y ultimas 5 filas del dataframe.
+
+```{r}
+fifa2017 <- read.csv("fifa_clean.csv", stringsAsFactors = FALSE, header=TRUE)
+head(fifa2017)
+tail(fifa2017)
+```
+
+
+Veamos la cantidad de columnas, filas y como quedaron los tipos de datos en el dataframe para entender si hubo algun dato importado incorrectamente.
+```{r}
+str(fifa2017) 
+nrow(fifa2017)
+ncol(fifa2017)
+```
+En principio como vemos, 17588 obs. of 54 variables, la cantidad de filas y columnas en el dataframe coinciden con la inspecion visual que hemos hecho sobre el archivo csv. Y los tipos de datos de cada variable corresponden a los esperados.
+
+# 2. Rating de los jugadores
+
+Nos interesa investigar los valores que toma la variable Rating en la población. Para ello, realizad un primer
+análisis visual de esta variable a partir de la muestra. Posteriormente, calculad el intervalo de confianza de la
+variable Rating de los jugadores. Seguid los pasos que se indican a continuación.
+
+## 2.1. Análisis visual
+
+Mostrad visualmente la distribución de la variable Rating. Usad el gráfico o gráficos que creáis más oportunos.
+Describid brevemente lo que se observa en los gráficos que representáis.
+
+Verifiquemos estadisticas basicas de la variable rating de forma numerica:
+```{r}
+summary(fifa2017$Rating)
+```
+Tenemos una media de 66.17 y el IQR esta entre 62.0 y 71.0.
+
+Analizemosla ahora visualmente:
+
+```{r}
+gbp=ggplot(fifa2017,aes(x=Rating,fill=Rating))+geom_boxplot(fill="lightblue")+theme_bw()
+gb=ggplot(fifa2017,aes(x=Rating,fill=Rating))+geom_bar(fill="lightblue")+theme_bw()
+grid.arrange(grobs = list(gb, gbp ) , nrow = 2, ncol = 1)
+```
+
+Con el barplot puede verse una distribucion casi normal, si es verdad con varios outliers a la derecha. Situacion que se hace mas notoria al usar un boxplot, donde se ven muchos mas outliers por la derecha que por la izquierda. Sin embargo, no vemos un left o righ skew exagerado, como dijimos estamos ante un distribucion normal de la variable rating por lo que podremos aplicar test parametricos sin problema en las siguientes secciones al menos sobre esta variable.
+
+## 2.2. Intervalo de confianza
+
+
+Calculad el intervalo de confianza de la variable Rating. A continuación, explicad el resultado y cómo se debe
+interpretar el resultado obtenido.
+
+**Nota**: Los cálculos se deben realizar manualmente. No se pueden usar funciones de R que calculen directamente
+el intervalo de confianza. En cambio, sí se pueden usar funciones como **mean, sd, qnorm, pnorm, qt** y **pt**.
+
+
+Asumiendo un intervalo de confianza del 95% y siendo que no tenemos previamente calculada la varianza de la poblacion y debemos estimarla a partir de la desviacion de la muestra, nuestra variable sigue de esta forma una distribucion *t* de Student con n-1 grados de libertad. 
+
+Por lo que calcularemos el intervalo de confianza para la media de la variable Rating de los jugadores cuando la varianza es desconocida previamente siguiendo estos calculos:
+
+```{r}
+alfa <- 1-0.95
+sd <- sd(fifa2017$Rating)
+n <- nrow(fifa2017)
+SE <- sd / sqrt(n)
+# Para obtener las probabilidades o cuantiles de la distribución t se usan las funciones pt y qt de R, 
+# que son análogas a las funciones pnorm y qnorm de la distribución normal
+z <- qt( alfa/2, df=n-1, lower.tail=FALSE )
+peso_medio  = mean(fifa2017$Rating)
+L <- peso_medio - z*SE
+U <- peso_medio + z*SE
+peso_medio
+c(L,U)
+```
+Luego aplicamos t.test solo a modo de chequeo de los calculos realizados:
+
+```{r}
+t.test( fifa2017$Rating, conf.level = 0.95)
+```
+
+## AGREGAR INTERPRETACION
+
+**AGREGAR INTERPRETACION**
+
+**SUMAR TB TAL VEZ EL CALCULO CON PNORM YA QUE ES NORMAL en el punto de analisis visutal**
+
+y segun la teoria dice lo siguiente:
+
+*Dado que no se conocía la varianza de la población y se ha estimado a partir de
+la muestra, hemos usado la distribución t de Student en lugar de la distribución
+normal. La consecuencia es que el intervalo de confianza calculado con
+la distribución t es más ancho que el equivalente calculado con distribución
+normal. Por lo tanto, para un mismo nivel de confianza, hay más incertidumbre
+en el valor del parámetro de la población cuando se usa la distribución t.*
+
+# 3. Diferencias entre jugadores
+
+Existe una creencia que los jugadores zurdos tienen mejor control de la pelota que los diestros. Vamos a comprobar qué dicen los datos al respecto. Nos preguntamos si los jugadores zurdos tienen mejor control de pelota (**Ball_Control**), valoración (**Rating**) y mejor **Dribbling** que los diestros. Para ello, primero seleccionad los jugadores que no son porteros (los porteros tienen el valor **GK** -Goal Keeper- en Club_Position).
+Entonces, debéis obtener dos muestras. La primera muestra contiene todos los jugadores de campo (no porteros) zurdos (**Preffered_Foot** igual a Left). La segunda muestra contiene todos los jugadores de campo (no porteros) diestros (**Preffered_Foot** Right). Usad un nivel de confianza del 95 %.
+
+**Aspectos a tener en cuenta para resolver este ejercicio:**
+
+* Se deben realizar los cálculos manualmente. No se pueden usar funciones de R que calculen directamente el contraste como ‘t.test‘ o similar. Sí se pueden usar funciones como ‘mean‘, ‘sd‘, ‘qnorm‘, ‘pnorm‘, ‘qt‘ y ‘pt‘. Sí podéis usar ‘var.test‘ si lo necesitáis.
+
+* Debido a que se preguntan las diferencias en tres variables, es aconsejable estructurar el código con una función, a la que se pasa como parámetro la variable a analizar. No deberías escribir el mismo código tres veces.
+
+Seguid los pasos que se especifican a continuacion.
+
+## 3.1. Pregunta de investigación
+
+La pregunta de investigacion en este caso es: los jugadores zurdos son mejores que los diestros en relacion del rating, control y dribling? o sea, puntuan mejores en estas 3 variables? 
+
+Podemos tambien plantear la pregunta para cada variable:
+
+- El rating de los jugadores zurdos es mejor que el de los diestros?
+
+- El Ball_Control de los jugadores zurdos es mejor que el de los diestros?
+
+- El Dribbling de los jugadores zurdos es mejor que el de los diestros?
+
+
+## 3.2. Representación visual
+
+Representad visualmente, mediante el gráfico que sea más apropiado el valor de estas variables en jugadores de campo (no porteros) diestros y zurdos. Se deben mostrar los valores de forma comparativa entre zurdos y diestros. Interpretad los gráficos.
+
+Como primer paso creamos una funcion que nos permite obtener facilmente los jugadores de campo.
+```{r}
+# Esta funcion devuelve un dataframe con todos los jugadores de campos y sus caractaeristicas
+# Si se llama sin parametros devuelve todos los jugadores de campo por default
+# mientras que devuelve solo los zurdos o diestros segun el parametro que se le pase
+# Ejemplos:
+# Devuelve los jugadores de campo zurdos   -> jugador_de_campo('Left')
+# Devuelve los jugadores de campo diestros -> jugador_de_campo('Right')
+# Devuelve todos los jugadores de campo    -> jugador_de_campo()
+
+jugador_de_campo <- function(foot=c('Left','Right')) {
+fifa2017[fifa2017$Preffered_Foot %in% foot & !fifa2017$Club_Position=='GK',]
+} 
+table(jugador_de_campo()$Preffered_Foot)
+```
+
+Realicemos los primeros analisis de las distintas variables para ambas muestras de jugadores, comenzando por el Rating 
+```{r}
+gb=ggplot(jugador_de_campo(),aes(x=Rating,fill=Preffered_Foot))+geom_bar(position="fill")+theme_bw()
+gbp=ggplot(jugador_de_campo(),aes(x=Rating,fill=Preffered_Foot))+geom_boxplot()+theme_bw()
+grid.arrange(grobs = list(gb, gbp ) , nrow = 2, ncol = 1)
+```
+
+```{r}
+gb=ggplot(jugador_de_campo(),aes(x=Ball_Control,fill=Preffered_Foot))+geom_bar()+theme_bw()
+gbp=ggplot(jugador_de_campo(),aes(x=Ball_Control,fill=Preffered_Foot))+geom_boxplot()+theme_bw()
+grid.arrange(grobs = list(gb, gbp ) , nrow = 2, ncol = 1)
+```
+
+
+
+```{r}
+gb=ggplot(jugador_de_campo(),aes(x=Dribbling,fill=Preffered_Foot))+geom_bar()+theme_bw()
+gbp=ggplot(jugador_de_campo(),aes(x=Dribbling,fill=Preffered_Foot))+geom_boxplot()+theme_bw()
+grid.arrange(grobs = list(gb, gbp ) , nrow = 2, ncol = 1)
+```
+
+
+## 3.3. Hipótesis nula y alternativa
+
+Planteemos ahora las hipotesis para la primer pregunta de investigacion:
+
+  *El rating de los jugadores zurdos es mejor que el de los diestros?*
+  
+Osea aqui queremos validar que:
+
+  *rating_zurdos > rating_diestros*
+  
+Por lo que las hipotesis nula (H0) y alternativa (H1) sera:
+  
+  H0: *rating_zurdos <= rating_diestros*
+  
+  H1: *rating_zurdos > rating_diestros*
+
+entonces segun lo que comprobemos en las siguientes secciones podremos llegar a decir:
+
+- Rechazo la H0 a favor de la H1 y por tanto si que hay evidencias que demuestran que los zurdos son mejores que los diestros. Y por tanto la respuesta a la pregunta de investigacion es SI, con el 95 de confianza
+		
+o
+
+- No hay evidencia que permita rechazar la hipotesis nula por lo que no puede afirmarse que los zurdos tengan mejor puntuacion que lo diestros para la muestra seleccionada.
+
+Con la misma logica seguida arriba podemos representar lo mismo para las dos otra preguntas de investigacion (para Ball_Control y Dribbling)
+
+
+## 3.4. Método
+
+En función de las características de la muestra, decidid qué método aplicar para validar la hipótesis planteada.
+
+Para ello, debéis especificar como mínimo: 
+
+a. si es un contraste de una muestra o de dos muestras (en caso de dos muestras, si éstas son independientes o están relacionadas),
+
+  > En este caso se trata de un Contraste de hipotesis de dos muestras independientes sobre la media (zurdos y diestros). Son Muestras Independientes, tenemos dos poblaciones, de diestros y de zurdos, no estan relacionados entre ellos.
+
+b. si podéis asumir normalidad y por qué,
+
+  > Se podria evaluar la normalidad para cada variable, pero tambien podemos basarnos en el Teorema del Limite Central, por lo que asumimos normalidad por el TLC, dado que el tamaño de la muestra es suficientemente grande (mayor a 30). De hecho la muestra de zurdos tiene un tamaño de 4022 y la de diestros tiene uno de 12934, lo cual se cumple en nuestro ejemplo. Entonces por el TLC, podemos asumir que las dos medias de cada muestra siguen distribuciones normales.
+
+c) si el test es paramétrico o no paramétrico, 
+
+  > Es un test parametrico, porque contamos con distribuciones donde podemos asumir la normalidad de datos, porque aplica el Teorema del Limite Central al tener muestras de mas de 30 elementos y porque estamos aplicando contrastes de hipotesis sobre variables o datos numericos.
+
+d) si el test es bilateral o unilateral, 
+
+  > Para determinar si es bilateral o unilateral se debe evaluar la H1, si es mayor o menor entonces es unilateral, mientras que si es por igual entonces bilateral
+  En nuestro caso como queremos evaluar si los zurdos son mejores que los diestros tenemos algo como:
+  H1: zurdos > diestros
+  Entonces si despejamos a la izquieda obtenemos:
+  zurdos - diestros  > 0 
+  Por lo que podemos concluir que se trata de un test unitareal por la derecha.
+  Dicho esto siendo que usamos un nivel de confianza del 95% el el nivel de significancia (alfa) sera de 0.05.
+
+e) si se puede asumir homocedasticidad o heterocedasticidad.
+
+> Como se sabe la homocedasticidad y la heterocedasticidad., tiene que ver con la variabiblidad de las muestras, es decir, los zurdos se pueden parecer muchos mientras que los diestros no, o viceversa. Si las varianzas entre las dos muestras son similares se podra  aplicar una formula, mientras que si son distintas se debe usar otra formula. Dicho todo esto y...
+
+Dados que asumimos que no se conocen las varianzas de la población y, por lo tanto, hay que estimarlas a partir de las muestras, para aplicar el estadístico adecuado, hay que comprobar si las varianzas de las dos poblaciones son iguales o diferentes. Para ello, aplicamos primero el test de igualdad de varianzas, tambien denomidado test de homoscedasticidad.
+
+Primero crearemos una funcion para reutilizar el test de homocedasticidad para cada variable
+
+```{r}
+homoscedasticidad <- function(muestra1, muestra2, variable) {
+  alfa <- 0.05
+  zurdos <- muestra1[,variable]
+  diestros <- muestra2[,variable]
+  mean1 <- mean(zurdos); n1 <- length(zurdos); s1 <- sd(zurdos)
+  mean2 <- mean(diestros); n2 <- length(diestros); s2 <- sd(diestros)
+  
+  fobs<-s1^2 / s2^2
+  fcritL <- qf(alfa/2, df1=n1-1, df2=n2-2 )
+  fcritU <- qf(1-alfa/2, df1=n1-1, df2=n2-2)
+  pvalue <- min(pf( fobs, df1=n1-1, df2=n2-2, lower.tail=FALSE ), 
+                pf( fobs, df1=n1-1, df2=n2-2)) *2
+  return ( data.frame(fobs, fcritL, fcritU, pvalue) )
+}
+```
+
+Ahora apliquemos las funciones a las muestras para cada variable.
+```{r}
+zurdos = jugador_de_campo('Left')
+diestros = jugador_de_campo('Right')
+homoscedasticidad(zurdos, diestros, 'Rating')
+homoscedasticidad(zurdos, diestros, 'Ball_Control')
+homoscedasticidad(zurdos, diestros, 'Dribbling')
+```
+
+Como se puede observar, las funciones qf y pf devuelven el cuantil y la probabilidad de la distribución F respectivamente. 
+
+Como vemos aqui el valor observado (para las 3 variables) cae fuera de la zona de aceptacion de la hipotesis nula, y de hecho es menor que el limite superior (fcritU) por ende se puede puede rechazar la hipotesis nula (H0=igualdad de varianzas). Sucede lo mismo si analizamos el valor *p*, basandonos en el, tambien podemos rechazar H0. Todo esto implica que estamos antes varianzas distintas.
+
+
+Tambien se puede aplicar simplemente el var.test en  para  evaluar estos conceptos o sea si podemos asumir varianzas parecidas o no. y segun eso aplicar una formula u otra.
+
+En R, la función var.test calcula el test de igualdad de varianzas:
+
+```{r}
+var.test(zurdos$Rating, diestros$Rating,   conf.level = 0.95 )
+var.test(zurdos$Ball_Control, diestros$Ball_Control,  conf.level = 0.95)
+var.test(zurdos$Dribbling, diestros$Dribbling,conf.level = 0.95)
+
+```
+
+Una vez que podemos asumir que las varianzas son distintas, aplicaremos el metodo correspondiente a la media de dos poblaciones independientes con varianza desconocida distinta (referencia: 5.2.2) en la siguiente seccion.
+
+
+## 3.5. Cálculos
+
+Calculararemos aqui los siguientes puntos:
+
+- *estadístico de contraste(t)*, o tambien denominado valor observado. Cuya formula depende del tipo de contraste, tipo de muestra, etc... En nuestro caso aplicaremos las formulas correspondiente a Contrates de hipotes de dos muestras independientes con varianzas desconocidas distintas.
+
+- *el valor crítico*, es el valor contra el cual comparar para decidir si la H0 es rechazada o no. En este caso como es unilateral a la derecha deberemos encontrar un valor positivo suficientemente grande vs el valor critico, que se obtiene a partir del nivel de confianza (alfa es el area debajo de la curva), que corresponde al error maximo permitido. 
+Por ejemplo con curva normal si buscamos una confianza de 95% entonces nivel es alfa=0.05 (valor critico), entonces valor critico=1.64 y entonces 
+Si valor observado > valor critico entonces rechazo H0 a favor de H1.
+
+- *el valor p*, se calcula a partir de la curva normal y el valor obtenido, ej si el valor observado fuera 3, entonces lo que se hace es calcular el area a la derecha de 3 con la funcion pnorm (o pt segun la distribucion), osea la P(p>3)
+
+
+Hay dos formas de rechazar la H0, como vimos arriba con el valor critico o evaluando valor P (que es el error que estaria cometiendo) contra alfa osea 
+si valor P < valor alfa, osea si el error es menor que el error maximo permitido, si esto se cumple se puede rechazar la H0.
+
+
+Dada este breve introduccion calculemos cada uno de los valores y evaluemos los resultados.
+
+```{r}
+contraste_5.2.2 <- function(muestra1, muestra2, variable) {
+  alfa <- 0.05
+  zurdos <- muestra1[,variable]
+  diestros <- muestra2[,variable]
+  mean1 <- mean(zurdos); n1 <- length(zurdos); s1 <- sd(zurdos)
+  mean2 <- mean(diestros); n2 <- length(diestros); s2 <- sd(diestros)
+  
+  tobs <- (mean1-mean2) / sqrt((s1**2)/n1 + (s2**2)/n2)
+  numerador  <- ((s1**2)/n1 + (s2**2)/n2)**2
+  denominador  <- ((s1**2)/n1)**2/(n1-1) + ((s2**2)/n2)**2/(n2-1)
+  grados_libertad  <- numerador / denominador
+  tcritL <- "-INF"
+  tcritU <- qt( 1-alfa, df=grados_libertad)
+  pvalue <-pt( abs(tobs), df=grados_libertad, lower.tail=FALSE)
+  
+  return ( data.frame(mean_Left=mean1,mean_Right=mean2, n_Left=n1, n_Right=n2, tobs, tcritL, tcritU, df=grados_libertad, pvalue) )
+}
+```
+
+
+```{r}
+zurdos = jugador_de_campo('Left')
+diestros = jugador_de_campo('Right')
+rating_result = contraste_5.2.2(zurdos, diestros, 'Rating')
+rating_result[,c('tobs', 'tcritL','tcritU','df','pvalue')]
+```
+Por lo que vemos aqui el valor observado (tobs: t observado) esta por fuera de la zona de aceptacion, mayor al limite superior (t critico). Y esto sumado a que el pvalue es mucho menor que el nivel de significancia podemos rechazar la hipotesis nula. Esto implica que rechazamos la H0 a favor de aceptar la Hipotesis alternativa.
+
+Lo mismo sucede para las otras dos variables:
+
+```{r}
+Ball_Control_result = contraste_5.2.2(zurdos, diestros, 'Ball_Control')
+Dribbling_result = contraste_5.2.2(zurdos, diestros, 'Dribbling')
+Ball_Control_result[,c('tobs', 'tcritL','tcritU','df','pvalue')]
+Dribbling_result[,c('tobs', 'tcritL','tcritU','df','pvalue')]
+```
+
+
+Reconfirmemos estos calculos con la ayuda de la funcion t.test:
+
+```{r}
+t.test(zurdos$Rating,diestros$Rating, alternative="greater", var.equal=FALSE)
+```
+En ambos casos, el valor p obtenido es menor que el nivel de significancia y, por lo tanto, se puede rechazar la hipótesis nula a favor de la alternativa, por lo que se reconfirma con el t.test que los zurdos tiene mejor Rating que los diestros.
+
+Lo mismo sucede con el control del balon y el regate como vemos aqui:
+
+```{r}
+
+t.test(zurdos$Ball_Control,diestros$Ball_Control,alternative="greater", var.equal=FALSE)
+
+t.test(zurdos$Dribbling,diestros$Dribbling,alternative="greater", var.equal=FALSE)
+
+```
+Si el p-value es menor que el valor de α seleccionado, existen evidencias suficientes para rechazar H0 en favor de H1, osea:
+ 
+  H0: *rating_zurdos <= rating_diestros*  => **RECHAZADA**
+  
+  H1: *rating_zurdos > rating_diestros*   => **ACEPTADA**
+  
+Dado que el p-value es menor que alpha, se dispone de evidencia suficiente para considerar que los zurdos puntuan mejor en las 3 variables analizadas que los diestros con una confianza del 95%.
+
+## 3.6. Tabla de resultados
+
+Incorporad una tabla de resultados con el formato que se indica a continuación. Adjuntamos el fragmento de código que hemos usado para generar la tabla para que podáis usar este mismo formato. Necesitáis usar la librería kableExtra (si es necesario, debéis instalarla previamente a su uso).
+
+```{r}
+var=c("Rating", "BallControl", "Dribbling")
+mean_Left=c(rating_result$mean_Left,Ball_Control_result$mean_Left,Dribbling_result$mean_Left)
+mean_Right=c(rating_result$mean_Right,Ball_Control_result$mean_Right,Dribbling_result$mean_Right)
+n_Left=c(rating_result$n_Right,Ball_Control_result$n_Right,Dribbling_result$n_Right)
+n_Right=c(rating_result$n_Left,Ball_Control_result$n_Left,Dribbling_result$n_Left)
+obs_value=c(rating_result$tobs,Ball_Control_result$tobs,Dribbling_result$tobs)
+critical=c(rating_result$tcritU,Ball_Control_result$tcritU,Dribbling_result$tcritU)
+pvalue=format(c(rating_result$pvalue,Ball_Control_result$pvalue,Dribbling_result$pvalue), digits = 3)
+
+data.frame(var, mean_Left,mean_Right, n_Left, n_Right,obs_value,critical, pvalue) %>% kable() %>% kable_styling()
+
+```
+
+## 3.7. Interpretación
+
+Como hemos comentado en la seccion 3.5, si el p-value es menor que el valor de α seleccionado, existen evidencias suficientes para rechazar H0 en favor de H1, osea:
+ 
+  H0: *rating_zurdos <= rating_diestros*  => <span style="color: red;">**RECHAZADA**</span>
+  
+  H1: *rating_zurdos > rating_diestros*   => <span style="color: green;">**ACEPTADA**</span> 
+  
+Dado que el p-value es menor que alpha y que el valor observado esta fuera de la zona de aceptacion de la hipotesis nula, podemos afirmar que se dispone de evidencia suficiente para considerar que los zurdos puntuan mejor en las 3 variables analizadas que los diestros con un nivel confianza del 95%.
+
+# 4. Comparación por pares
+
+Nos preguntamos si obtendríamos el mismo resultado si comparásemos **los jugadores de campo zurdos con aquellos jugadores de campo diestros que tienen un peso, altura y edad similar**. Para dar respuesta a esta pregunta, realizaremos un proceso similar al denominado propensity score matching, aunque un poco simplificado. Realizaremos lo siguiente:
+
+ - Para cada jugador de campo zurdo, localizaremos el jugador de campo diestro más similar, en cuanto a peso, altura y edad.
+
+ - Para realizar esta búsqueda, debemos implementar un algoritmo del tipo vecino más cercano. 
+ 
+ - Para calcular la similitud entre dos jugadores, nos basaremos en la función de distancia euclídea.
+ 
+La función de distancia euclídea entre dos vectores es:
+
+    euclidean <- function( x1, x2 ){
+    
+      return ( sqrt( sum ( (x1-x2)^2 ) ) )
+      
+    }
+    
+El resultado de este proceso de matching serán dos muestras:
+
+- La muestra original está compuesta por el conjunto de jugadores de campo zurdos.
+
+- La segunda muestra tendrá el mismo tamaño que la primera. En esta muestra hay, para cada jugador zurdo de la primera muestra, el jugador diestro con características físicas similares. Es decir, existe una correspondencia entre el jugador 1 de la muestra de zurdos, con el jugador 1 de la muestra de diestros, y así para todos los jugadores.
+
+A partir de estas muestras, nos preguntaremos si los jugadores zurdos son mejores en Rating que los jugadores diestros relacionados.
+
+Para poder realizar este análisis, calcularemos primero el jugador diestro más similar a cada jugador zurdo.
+
+
+## 4.1. Jugador más similar
+
+En primer lugar, implementad una función **my.nn** que, dado un jugador calcule el jugador más similar en términos de edad, peso y altura. La función debe ser:
+
+    my.nn <- function( x, sample ){
+    
+    }
+
+donde x es el jugador zurdo, de tipo vector que guarda la edad, peso y altura. Y **sample** es la muestra de diestros con valores en edad, peso y altura. Para calcular el ejemplo de **sample** más similar a x, usad la función de distancia euclídea que os hemos suministrado. La función **my.nn** devuelve el índice (posición) del jugador de la muestra **sample** que se parece más a x.
+
+Una vez realizada esta función, podemos usarla para calcular, para cada jugador de la muestra de zurdos, el jugador diestro más similar. Para ello, implementad la función siguiente:
+
+    my.nn.sample <- function( sample1, sample2 ){
+    
+    }
+
+donde **sample1** es la muestra de jugadores zurdos y **sample2** es la muestra de jugadores diestros. Esta función devuelve la muestra Right.paired, que contiene el listado de jugadores diestros más similares a los jugadores zurdos de la muestra 1. En definitiva, esta función realiza una iteración sobre la muestra de zurdos. Para cada jugador de la muestra de zurdos, llama a la función **my.nn**.
+
+Recomendamos que probéis la función con una muestra pequeña de datos para validar que el código es correcto.
+
+Cambiamos un poco la estrategia definida para generar una funcion que en lugar de una lista de zurdos y otra lista de diestros, genere como salida un dataframe con dos columnas, la primera contiene el index del dataframe de zurdos y la segunda columna el index del dataframe de diestros, donde este ultimo index corresponde al index del jugador diestro mas similar al zurdo. 
+```{r}
+zurdos_some = zurdos[,c("Age", "Weight", "Height")]
+diestros_some = diestros[,c("Age", "Weight", "Height")]
+
+my.nn = function(df1, df2) {
+  near_rows= data.frame(matrix(ncol = 2, nrow = 0))
+  names(near_rows) = c("index_left", "index_right")
+  for(k in 1:nrow(df1)) {
+    df.dist<-dist(df1[k,],df2)
+    closest.row<-row.names(df2)[which.min(df.dist)]
+    near_rows[k,] = cbind(row.names(df1[k,]), closest.row)
+  }
+  return (near_rows)
+}
+
+jugadores_similares = my.nn(zurdos_some, diestros_some)
+```
+
+Aqui vemos un sample del resultado:
+```{r}
+head(jugadores_similares)
+tail(jugadores_similares)
+nrow(jugadores_similares)
+```
+
+## 4.2. Muestras
+
+Llegados a este punto, tenemos dos muestras: **Left.sample**, con los jugadores de campo zurdos. Y **Right.paired**, que contiene los jugadores diestros más similares a los jugadores de la muestra **Left.sample**.
+
+Mostrad las primeras filas de las dos muestras.
+
+**Nota**: Puede que el algoritmo del vecino más cercano necesite bastante tiempo en computarse, ya que las muestras contienen muchos datos. Si es así, os recomendamos que apliquéis el cálculo sobre una muestra de 100 jugadores zurdos. Podéis también tomar una muestra de 200 jugadores diestros. Así evitaréis el exceso de tiempo computacional requerido y la actividad se considera igualmente válida
+
+A partir del resultado de la aplicacion la funcion my.nn creada en el paso anterior generamos dos muestras (Left.sample y Right.paired) tal como es solicitado:
+```{r}
+
+Left.sample = zurdos[jugadores_similares$index_left,]
+Right.paired = diestros[jugadores_similares$index_right,]
+
+head(Left.sample)
+nrow(Left.sample)
+head(Right.paired)
+nrow(Right.paired)
+
+```
+
+## 4.3. Hipótesis nula y alternativa
+
+A partir de las dos muestras, ¿podemos afirmar que los zurdos son mejores en Rating que los correspondientes jugadores diestros? 
+
+Procedemos de manera similar al punto 3, por lo que plantearemos las siguientes hipotesis:
+
+El rating de los jugadores zurdos es mejor que el de los diestros?
+
+Osea aqui queremos validar que:
+
+**rating_zurdos > rating_diestros**
+
+Por lo que las hipotesis nula (H0) y alternativa (H1) serian:
+
+H0: **rating_zurdos <= rating_diestros** o **rating_zurdos-rating_diestros <= 0**
+
+H1: **rating_zurdos > rating_diestros** o **rating_zurdos-rating_diestros > 0**
+
+
+## 4.4. Método
+
+El metodo que aplicaremos es *Contraste de hipotesis de dos muestras apareadas o emparejadas sobre la media*. Se los vincula a partir de las caracteristicas fisicas, ya que la muestra de diestros que se comparara contra la de zurdos fue obtenida en el punto 4.1 a partir de determinar las caracteristicas (edad, altura y peso) mas similares entre ambos grupos.
+
+Por lo tanto sabiendo que tenemos dos muestras una de zurdos y otra de diestros y aplicaremos el metodo de dos muestras emparejadas, debemos calcular la diferencia entre los datos relacionados de estas dos muestras.
+
+Por ejemplo teniendo ambas muestras:
+
+    x = Left.sample$Rating
+    
+    y = Right.paired$Rating
+    
+Calcularemos el vector de diferencias de esta forma:
+
+    *di = xi - yi*
+    
+Por lo que ahora es como si fuera que tengamos una sola muestra: *D = (di, d2,... dn)*, y es entonces que reformulamos un poco las H0 y H1 de esta manera para trabajar con el metodo:
+
+H0: μ*d* = 0
+
+H1: μ*d* > 0
+
+En cuanto a la normalidad de esta muestra, ya lo hemos visto antes, pero no esta de mas volver a mencionar que podemos basarnos en el Teorema del Limite Central, por lo que asumimos normalidad por el TLC, dado que el tamaño de la muestra es suficientemente grande (mayor a 30). De hecho la muestra de zurdos tiene un tamaño de 4022 y la de diestros que esta apareada tiene la misma cantidad. Entonces por el TLC, podemos asumir que las dos medias de cada muestra siguen distribuciones normales.
+
+En caso de que igualmente quisieramos realizar un test rapido es posible aplicar el test de normalidad Shapiro-Wilk y dibujar el gráfico Q-Q
+
+```{r}
+x = Left.sample$Rating
+y = Right.paired$Rating
+dif_rating=x-y
+
+qqnorm(dif_rating)
+qqline(dif_rating)
+shapiro.test(dif_rating)
+```
+Como vemos en la grafica los puntos estan casi todos pegados a la linea diagonal por lo que se puede asumir normalidad, mas alla de que con Shapiro-Wilk obtengamos un valor que nos permitiria rechazar la hipotesis nula de normalidad. Pero en este caso vamos a basarnos en el TLC y en el grafico Q-Q (que es un tipo de visualización que se utiliza para diagnosticar la desviación de los datos de la muestra en relación con una población normal, esta utima represenda en una linea diagonal mediante qqline ) para asumir la normalidad.
+
+Dicho todo esto continuemos en el siguiente punto la implementacion de los calculos.
+
+
+## 4.5. Cálculos
+
+Calculararemos aqui los siguientes puntos usando un nivel de confianza del 95%
+
+- *estadístico de contraste(t)*
+
+- *el valor crítico*
+
+- *el valor p*
+
+
+```{r}
+x = Left.sample$Rating
+y = Right.paired$Rating
+
+#diferencia de muestras:
+dif_rating = x-y
+head(dif_rating)
+
+```
+
+Si no se conoce la varianza de la población, como es nuestro caso, entonces hay que estimarla a partir de la desviación de la muestra. En este caso el estadístico de contraste sigue una distribución *t* de Student con *n – 1* grados de libertad. Teniendo en cuenta, claro, que se aplicara este test a la muestra de las diferencias, la formula para su cualculo es:
+
+tobs = mean(D) /  (sD / sqrt(nD))
+
+donde D es la media de las diferencias, sD es la desviación estándar y nD es el
+número de elementos de la muestra de las diferencias.
+
+Veamos el codigo R:
+
+```{r}
+nD <- length(dif_rating)
+alfa <- 0.05 # unilateral a la derecha
+meanD = mean(dif_rating); 
+sD = sd( dif_rating )
+tobs = (meanD)/(sD/sqrt(nD))
+
+#Región de aceptación unilateral por la derecha
+tcrit.L = '-INF'
+tcrit.U = qt(1-alfa, df=nD-1)
+
+#Cálculo del valor p unilateral
+pvalue = pt(tobs, lower.tail=FALSE, df=nD-1)
+
+# Visualizar resultado
+data.frame(tcrit.L, tcrit.U, tobs, pvalue)
+
+```
+
+Con los valores obtenidos vemos que el valor observado cae dentro de la zona de la aceptacion de la hipotesis nula, por ende, podemos inferir que los zurdos no son necesariamente mejores que los diestros en igualdad de condiciones (edad, peso y altura). De hecho se reconfirma con el pvalue cuyo valor es mayor al error maximo permitido (alpha), lo cual indica que no se puede refutar la hipotesis nula.
+
+Validemos lo calculado arriba mediante el uso t.test:
+```{r}
+t.test( Left.sample$Rating, Right.paired$Rating, paired=TRUE, alternative="greater")
+```
+Como reconfirmamos aqui con un p-value > alpha, no podemos rechazar la hipotesis nula, por lo que se infiere o no hay evidencias suficientes que afirmen que los jugadores zurdos son mejores que los derechos que posean caracteristicas similares de edad, altura y peso, con un nivel de confianza del 95%.
+
+
+
+## 4.6. Interpretación
+
+    **TERMINAR**
+
+## 4.7. Reflexión
+
+Lo que vemos es que al realizar contrastes de muestras emparejadas de poblaciones podemos llegar a tener resultados totalmente opuestos a cuando contrastamos muestras de esa misms pobalacion pero independientes entre ellas. 
+
+En las muestras independientes obtuvimos por ejemplo que hay evidencias que indican que en general los zurdos son mejores que los diestros, pero al emparejarlos por edad, peso y altura hubiesemos creido que las diferencias se harian mas notorias que el rating de un zurdo hubiese sido en la mayoria de los casos mayor que el de los diestros, de hecho esa es la "idea popular", pero no. 
+
+Con estos dos contrastes de hipotesis podemos concluir varias cosas:
+
+1. que la inferencia estadistica, en particular el contraste de hipotesis, es una gran herramienta o metodologia para aceptar o refutar cualquier idea, hasta las mas instauradas en el publico general
+
+2. que es evidente que el zurdo en general es mejor que el diestros para ciertos parametros o variables de su juego, sin importar la edad, el peso, la altura o cualquier atributo fisico de los mismos.
+
+3. pero que esa mejor aptitud en general no es asi cuando ambos grupos tienen caracteristicas fisicas similares o igualadas. 
+
+
+Se podrian realizar planter mas hipotesis y realizar otros contrastes para entender porque se da el punto 2 y porque el 3. Por ejemplo compararlos apareados pero sin la edad, solo por peso y altura, y poder validar si los zurdos son mejores o no a cierta edad. O viceversa entender si la mejora o no del zurdo tiene que ver con el peso y altura de los mismos. En futbol muchas veces influye la estatura de los jugadores. Es de publico conocimiento que los jugadores de futbol (al contrario que en el basquet) de gran altura en general, o al menos se supone, que no son mas habiles. Sera que en los jugadores zurdos son mas bajos que los diestros?.
+
+Como vemos la inferencia tambien es un proceso iterativo, el haber realizado los contraste del ejercicio 3 y 4, puede llevar a plantear mas hipotesis para entender aun mas los datos, en este caso las muestras de cierta poblacion.
+
+# 5. Comparación entre clubes
+
+## 5.1. Hipótesis nula y alternativa
+## 5.2. Método
+## 5.3. Cálculos
+## 5.4. Resultados e interpretación
+
+# 6. Resumen ejecutivo
