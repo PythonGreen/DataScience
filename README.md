@@ -1,3 +1,3 @@
-# UOCPractices
+# DataScience Training 
 
 Readme file 
