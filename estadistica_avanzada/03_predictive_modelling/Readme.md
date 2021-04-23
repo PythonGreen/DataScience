@@ -16,7 +16,7 @@
 
 Estudiaremos los modelos predictivos a partir de una muestra de estudio. 
 
-Al finalizar la actividad, el estudiante es capaz de:
+Al finalizar la actividad, sabremos como:
 
 - Predecir un resultado con un modelo lineal.
 - Plantear un modelo de regresión con una variable dependiente (explicada) en función de un conjunto de factores que influyen (explicativos).
