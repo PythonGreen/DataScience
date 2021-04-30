@@ -1,3 +1,3 @@
 # DataScience Training 
 
-Becoming a DataScientist !
+Becoming a Data Scientist!!!
