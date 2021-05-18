@@ -1,0 +1,600 @@
+---
+title: "A3 - Modelado Predictivo"
+author: "Pablo A. Delgado"
+date: '`r format(Sys.Date()-1,"%e de %B, %Y")`'
+output:
+  pdf_document: 
+    highlight: zenburn
+    toc: yes
+    toc_depth: 4
+    latex_engine: lualatex
+  word_document: default
+  html_document:
+    highlight: default
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+---    
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Introduccion
+
+En esta actividad usaremos un conjunto de datos sobre el aeropuerto internacional de San Francisco (dat_SFO). Ha sido galardonado dos veces, como el mejor aeropuerto en América del Norte. En este estudio se analizarán los datos de vuelos recogidos durante el año 2015. El archivo contiene aproximadamente 145000 registros y 28 variables
+
+
+Las principales variables son:
+
+  - Month: Día del mes de salida del vuelo.
+  - Day of week: Día de la semana de salida del vuelo.
+  - Airline: Nombre en siglas de la compañía aérea.
+  - Destination Airport: Aeropuerto de destino.
+  - Scheduled Departure: Hora de salida del vuelo estimada por la compañía.
+  - Departure Time: Hora de salida real del vuelo.
+  - Departure Delay: Diferencia entre la hora de salida estimada y la real.
+  - Air Time: Tiempo real de vuelo en aire,
+  - Distance: Distancia entre los aeropuertos origen y llegada.
+  - Scheduled Arrival: Hora de llegada del vuelo estimada por la compañía.
+  - Arrival Time: Hora de llegada del vuelo
+  - Arrival Delay: Diferencia entre la hora de llegada estimada y la real.
+  - Late Aircraft Delay: Retraso por llegada tarde del avión.
+  - Diverted: Indicador de vuelo desviado, siendo cero si el vuelo se ha efectuado con normalidad y uno si ha sido desviado.
+  - Cancelled: Indicador de vuelo cancelado, siendo cero si el vuelo se ha efectuado y uno si no.
+    
+
+Cada año una cantidad considerable de vuelos de diferentes aerolíneas se retrasa o cancela, costando al sistema de transporte aéreo miles de millones de euros en pérdidas de tiempo y dinero. En esta actividad se pretende realizar un estudio de los retrasos de los vuelos, tanto en salidas como llegadas.Para ello, se estudiarán las relaciones entre los mismos y varias variables. Primero se estudiarán las relaciones lineales y posteriormente se evaluarán los posibles factores de riesgo de estos retrasos.
+
+A continuación, se especifican los pasos a seguir.En la entrega, se debe respetar la misma numeración de los apartados del índice.
+
+
+# 1. Modelo de regresión lineal
+
+Como primer paso definimos que librerias estaremos usando. Para ellos generamos un vector con todas las posibles librerias que necesitaremos, instalamos las que no tengamos, para finalmente mediante el uso de lapply cargarlas.
+
+```{r}
+packages <- c("ggplot2", "gridExtra", "vcd", "ResourceSelection", "pROC")
+new <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new)) install.packages(new)
+foo=lapply(packages, require, character.only=TRUE)
+```
+
+Dado que el input de datos es un archivo csv, y en una inspeccion visual manual hemos visto que posee como separador de columna la coma, usaremos la funcion read.csv() para cargar los datos en un dataframe. Hemos hemos podido constatar que el csv cuenta con 28 columnas y 145954 lineas, la primera linea corresponde al header y la ultima una linea en blanco, siendo asi 145952 lineas con datos.
+
+Dicho esto carguemos el archivo y hagamos una verificacion rapida de las primeras y ultimas 5 filas del dataframe para algunas de las variables.
+
+```{r}
+vuelos = read.csv("SFO.csv", stringsAsFactors = FALSE, header=TRUE)
+cols = c('YEAR','AIRLINE','FLIGHT_NUMBER','ORIGIN_AIRPORT','DESTINATION_AIRPORT',
+         'SCHEDULED_TIME','ELAPSED_TIME','DISTANCE','ARRIVAL_DELAY',
+         'DEPARTURE_DELAY','CANCELLED')
+head(vuelos[,cols])
+tail(vuelos[,cols])
+```
+Veamos la cantidad de columnas, filas y como quedaron los tipos de datos en el dataframe para entender si hubo algun dato importado incorrectamente.
+```{r}
+str(vuelos) 
+nrow(vuelos)
+ncol(vuelos)
+```
+En principio como vemos, 145952 obs. of 28 variables, la cantidad de filas y columnas en el dataframe coinciden con la inspecion visual que hemos hecho sobre el archivo csv. Y los tipos de datos de cada variable corresponden a los esperados.
+
+Lo que si es visible que tenemos cancellation reasons sin asignar, que serian los casos en que no hubo cancelacion. Valores perdidos a los cuales se le podra imputar por ej un "No Aplica" si se trata de los vuelos no cancelados. Ademas vemos varios NA en las dos ultimas variables. En ambos casos trataremos segun corresponda al momento de realizar el analisis y prediccion de los datos en los siguientes pasos de esta practica.
+
+```{r}
+colSums(is.na(vuelos))
+colSums(vuelos=="")
+```
+
+
+
+## 1.1. Modelo de regresión lineal (regresores cuantitativos)
+
+### 1.1.a Regresion Lineal Simple
+
+Estimar por mínimos cuadrados ordinarios un modelo lineal que explique la variable DEPARTURE_DELAY en función de la variable ARRIVAL_DELAY. Se evaluará la bondad del ajuste, a partir del coeficiente de determinación. Calcular el coeficiente de correlación y explicar su relación con el coeficiente de determinación.
+
+```{r}
+m11a = lm(DEPARTURE_DELAY~ARRIVAL_DELAY,data=vuelos)
+summary(m11a)
+
+```
+
+Siendo el coeficiente de determinación ($R^2$ o R-squared) una medida de calidad
+del modelo que toma valores entre 0 y 1, se comprueba cómo el DEPARTURE_DELAY y el
+ARRIVAL_DELAY se correlacionan fuertemente, dando lugar a un R-squared de 0.9082.
+
+Pero que pasa si imputamos un valor al arrival_delay? Para eso creamos una nueva variable sin los NA, aplicando un calculo simple de imputacion: asignar la media. Obviamente se podria usar regresion para imputar. Pero a modo de ejemplicar y validar rapidamente usamos este metodo.
+
+```{r}
+vuelos$ARRIVAL_DELAY_NO_NA = vuelos$ARRIVAL_DELAY
+  
+vuelos$ARRIVAL_DELAY_NO_NA[is.na(vuelos$ARRIVAL_DELAY_NO_NA)]=mean(vuelos$ARRIVAL_DELAY_NO_NA,na.rm=T)
+```
+
+Volvamos a validar:
+
+```{r}
+m11a_bis = lm(DEPARTURE_DELAY~ARRIVAL_DELAY_NO_NA,data=vuelos)
+summary(m11a_bis)
+```
+Vemos que practivamente no hubo cambios en el coeficiente, solo un delta negativo de -0.0057 entre ambos coeficientes, osea empeora minimamente la prediccion porque en realidad en el caso anterior directamente LM descarto los valores missing y por ende no fueron tenidas en cuenta. Mientras que al imputarle solo la media, y estabamos hablando de vuelos comerciales con todo lo que eso implica, aplicar la media de los delay en la demora no parece ser una buena medida de imputacion de valores missings, al menos para la muestra con la que contamos.
+
+
+Ahora volviendo a los resultados sin descartar missings, dijimos que el coeficiente de determinacion $R^2$ es 0.9082, pero que implica este valor?
+
+La funcion de lm() de R nos calcula la recta de regresion por minimos cuadrados, la cual  minimiza la suma de los cuadrados de los residuos. Pero como sabemos si ese ajuste es lo suficiente bueno? Sabemos que visualmente podemos visualizarlo con graficos de dispersion, pero si hablamos de un valor numerico que nos ayude precisarlo es aqui cuando entra en juego el coeficiente de determinacion, el cual es la medida mas importante de la bondad del ajuste. La formula es:
+
+
+$$R^2=\frac{Varianza\ explicada\ por\ la\ recta\ de\ regresión}{Varianza\ total\ de\ los\ datos}$$
+Por lo tanto como $R^2$ nos explica la proporción de variabilidad de los datos que queda explicada por el modelo de regresión, cuanto más cercano a la unidad esté,
+mejor es el ajuste.
+
+Como hemos dicho antes, con el diagrama de dispersión podemos ver si hay algún tipo de relación entre dos variables *X* e *Y*. Pero ademas con el coeficiente de correlacion podemos representar en numeros esta relacion. Dicho eso calculemos el r de nuestras variables :
+
+```{r}
+cor(x=vuelos$DEPARTURE_DELAY, y=vuelos$ARRIVAL_DELAY, use = "pairwise.complete.obs")
+```
+Y siendo que el coeficiente de correlación se caracteriza por estar entre $-1 \le r \le 1$, de forma que:    
+  
+• $r = -1$ o $r = 1$ cuando haya una asociación lineal exacta entre las variables
+(en el primer caso positiva y en el segundo, negativa).
+
+• $-1 <r< 1$cuando la relación entre las variables no sea lineal de forma exacta.
+
+• Para los otros valores siempre se formula la misma pregunta: ¿a partir de qué
+valor de r podemos decir que la relación entre las variables es fuerte? Una regla
+razonable es decir que la relación es débil si $0 < | r | < 0,5$, fuerte si $0,8 <
+| r | < 1$, y moderada si tiene otro valor.
+
+Nuestro valor de r obtenido esta representado por las dos ultimas situaciones ya que primero la relacion entre nuestras dos variables en analisis no tienen una relacion lineal exacta y segundo que tienen una correlacion fuerte dado que:
+
+$0,8 < | r=0.9529701 | < 1$
+
+*Recordar, que si el r obtenido hubiese estado cerca de 0, implicaria que no existe correlacion entre las variables.*
+
+Y esto cumple con la regla $R^2 = r^2$ en regresiones simples ya que:
+
+$R^2 = 0.9082$ y si calculamos el cuadrado de r tenemos:
+
+```{r}
+r=0.9529701
+r^2
+```
+o sea $r^2 = 0.908152 = R^2$ 
+
+
+Recordar entonces que:
+
+* R-Squared: mide la proporción de variación de la variable dependiente explicada
+por la variable independiente.
+* r: mide el grado de asociación entre las dos variables.
+* Y en la regresión lineal simple siempre tendremos que $R^2 = r^2$, como hemos podido comprobar.
+
+También es importante tener presente que r nos da más información que R2. El
+signo de r nos informa de si la relación es positiva o negativa. Así pues, con el
+valor de r siempre podremos calcular el valor de R-Squared, pero al revés siempre nos quedará indeterminado el valor del signo a menos que conozcamos la pendiente
+de la recta. Por ejemplo, dado nuestro R-squared de 0.9082, si sabemos que la pendiente de la recta de regresión es positiva, entonces podremos afirmar que el coeficiente de correlación (realizando $\sqrt{R^2}$) será r = 0.9529 (hubiese sido -0.9529 si la pendiente era negativa).
+
+### 1.1.b Regresion Lineal Simple Multiple
+
+Se añadirá al modelo anterior la variable independiente DISTANCIA. ¿Existe una mejora del ajuste?. 
+
+```{r}
+m11b = lm(DEPARTURE_DELAY~ARRIVAL_DELAY+DISTANCE,data=vuelos)
+summary(m11b)
+```
+
+Al introducir DISTANCE, el R-squared mejora hasta 0.9127 ya que también se
+correlaciona con esta nueva variable, aunque en menor medida que con ARRIVAL_DELAY como puede verse en el resultado del summary.
+
+### 1.1.c  Regresion Lineal Multiple (2 submuestras)
+
+Ahora procederemos a dividir la muestra en dos, según los vuelos sean o no más largos. Se tomará por larga distancia aquéllos con un recorrido superior a 600 millas. 
+
+
+```{r}
+vuelos_short_distance=vuelos[vuelos$DISTANCE<=600,]
+vuelos_long_distance=vuelos[vuelos$DISTANCE>600,]
+
+m11c_short_distance = lm(DEPARTURE_DELAY~ARRIVAL_DELAY+DISTANCE,data=vuelos_short_distance)
+summary(m11c_short_distance)
+
+m11c_long_distance = lm(DEPARTURE_DELAY~ARRIVAL_DELAY+DISTANCE,data=vuelos_long_distance)
+summary(m11c_long_distance)
+```
+
+Vemos que el coeficiente de determinacion mejora cuando solo trabajamos con el grupo de vuelos cortos, mientras que se decrementa minimamente para los vuelos largos. Aparentemente seria mas costoso predecir cual sera el delay de los vuelos largos que de los cortos. 
+Lo cual se podria esperar, ya que podria afectarnos los factores climaticos por mas tiempo? esta hipotesis se podria validar si contaramos con informacion climatica mas precisa como tambien con cualquier otro dato que consultando con los expertos en el area nos puedan sugerir utilizar.
+
+## 1.2. Modelo de regresión lineal múltiple (regresores cuantitativos y cualitativos)
+
+En este apartado se estudiará la relación de DEPARTURE_DELAY, con las variables explicativas ARRIVAL_DELAY y LATE_AIRCRAFT_DELAY. Para ello se procederá a la recodificación de la variable LATE_AIRCRAFT_DELAY, en mayor y menor o igual a 15 minutos.
+
+```{r}
+vuelos$LATE_AIRCRAFT_FLAG[vuelos$LATE_AIRCRAFT_DELAY<15 
+                          | is.na(vuelos$LATE_AIRCRAFT_DELAY)] = "< 15"
+vuelos$LATE_AIRCRAFT_FLAG[vuelos$LATE_AIRCRAFT_DELAY>=15] = ">= 15"
+
+table(vuelos$LATE_AIRCRAFT_FLAG)
+nrow(vuelos)
+```
+```{r}
+m12 = lm(DEPARTURE_DELAY~ARRIVAL_DELAY+LATE_AIRCRAFT_FLAG,data=vuelos)
+summary(m12)
+```
+
+En este ultimo caso (ARRIVAL_DELAY+LATE_AIRCRAFT_FLAG) hemos obtenido un R-Squared de 0.9102, menor al que obtuvimos con la combinacion ARRIVAL_DELAY+DISTANCE ya que el mismo era de 0.9127 (sin realizar el split de DISTANCE).
+
+## 1.3. Diagnosis del modelo
+
+Para la diagnosis se escoge el modelo construído en el apartado 1.1.b y se pintarán dos gráficos: 
+
+a) uno con los valores ajustados frente a los residuos (que nos permitirá ver si la varianza es constante) y 
+
+b) el gráfico cuantil-cuantil que compara los residuos del modelo con los valores de una variable que se distribuye normalmente (QQ plot). 
+
+
+Para ello usamos el metodo plot pasandole por parametro los dos graficos que necesitamos analizar:
+
+```{r}
+plot(m11b, which = c(1,2), caption = list("Residuals vs Fitted", "Normal Q-Q"))
+```
+
+Si bien R2 es grande y el ajuste es bueno, tenemos igualmente una distorsion en los residuos.
+
+Vemos el grafico "Residuals vs Fitted" una posible tendencia en los datos, si bien para valores menores a 500 los puntos paracen concentrarse...y hubiesemos dicho que estan todos los puntos o residuos dispersos sin una forma especifica, pero sin embargo a medida que los valores aumentan, tambien comienzan a aumentar los valores de los residuos con una clara tendencia lineal. Aqui puede estar sucediendo que el modelo es bueno para valores menores a 500 y deja de ser util para valores estimados mayor a 500.
+
+
+Mientras que en el QQ Plot, vemos que en los extremos inferior y superior nos alejamos de una distribucion normal. Como se alejan podemos decir que los residuos no siguen una distribucion normal. Una de las asunciones para la validez del modelo lineal es que los residuos presenten homoscedasticidad (valores de varianza similares) y normalidad. 
+
+  *Que los residuos de un modelo de regresión lineal se distribuyan de forma normal es una condición necesaria para que la significancia (p-value) y los intervalos de confianza asociados a los predictores (calculados a partir de modelos teóricos) sean precisos.*
+
+Pero el QQplot que vemos nos lleva a pensar que no se cumple la normalidad de los residuos. Por tanto, deberíamos concluir que los residuos no siguen una distribución normal. Esto invalidaría la asunción del modelo y nos podría hacer pensar en buscar modelos alternativos, quizás otro tipo de regresiones (no lineales). O sea, dado que nos encontramos con un patron que se aleja de la normalidad se tendria que estudiar si existe relaciones no lineales que se podrian modelar.
+
+En resumen si queremos determinar si encontramos modelos mejor ajustados o validados, tendriamos que produndizar mas en las variables para entender si hay relaciones no lineales, osea exponenciales o logaritmicas, para ajustar mas el modelo.
+
+
+## 1.4. Predicción del modelo
+
+Según el modelo del apartado b), calcular el retraso en la salida de un avión, que después de recorrer 2500 millas ha llegado a su destino con 30 minutos más tarde.
+
+
+```{r}
+# Usamos un valor negativo de arrival delay por definicion de la variable.
+# Arrival Delay: Diferencia entre la hora de llegada estimada y la real, 
+# y siendo que el avion llega 30 minutos mas tarde que la hora estimada =>
+# Arrival Delay = Hora Estimada - (Hora Estimada + 30)
+predict.df<-data.frame(DISTANCE=2500,ARRIVAL_DELAY=-30)
+predict(m11b,newdata=predict.df)
+```
+La prediccion a partir del modelo definido nos dice que la hora de salida del avion sera aproximadamente 18 minutos despues de la hora establecida.
+
+# 2. Modelo de regresión logística.
+
+## 2.1. Estudio de relaciones entre variables.
+Se quiere estudiar la probabilidad que tiene un avión de sufrir un retraso.
+
+Para ello, primero se creará una nueva variable dicotómica llamada delay_SFO. Esta nueva variable está relacionada con los valores de la variable Departure_Delay. Se codificará de la siguiente: Si el valor de dicha variable es menor a 15 minutos, se puede asumir que el vuelo no va con retraso y se codificará con el valor 0,
+en caso contrario, se codificará con el valor 1.
+
+Primero crearemos la variable:
+```{r}
+vuelos[vuelos$DEPARTURE_DELAY < 15, 'DELAY_SFO'] = 0
+vuelos[vuelos$DEPARTURE_DELAY >= 15, 'DELAY_SFO'] = 1
+vuelos$DELAY_SFO = factor(vuelos$DELAY_SFO)
+```
+
+Y demosles un rapido vistazo de como se distribuyen estos dos nuevos valores:
+```{r}
+barplot(table(vuelos$DELAY_SFO), col = c("lightblue"))
+```
+
+
+### 2.1.a Analisis con dos variables independientes
+
+Visualizar la relación entre delay_SFO y las variables independientes:DAY_OF_WEEK y AIRLINE. Calcular las frecuencias relativas. Interpretar el significado. Visualizar con barplot.
+
+Para resolver esto representemos las tablas de contigencias.    
+
+Veamos primero las Tablas de frecuencias absolutas para ambas variables:
+```{r}
+AIRLINE_TABLE = table(vuelos$DELAY_SFO,vuelos$AIRLINE ) 
+DAY_OF_WEEK_TABLE = table(vuelos$DELAY_SFO,vuelos$DAY_OF_WEEK ) 
+AIRLINE_TABLE
+DAY_OF_WEEK_TABLE
+```
+
+Mientras que ahora representemos las Tablas de frecuencias relativas y visualicemos graficamente esos valores:
+```{r}
+AIRLINE_TABLE_RELATIVE = prop.table(AIRLINE_TABLE, margin=2) 
+DAY_OF_WEEK_TABLE_RELATIVE = prop.table(DAY_OF_WEEK_TABLE, margin=2) 
+
+AIRLINE_TABLE_RELATIVE
+ggplot(vuelos,aes(x=AIRLINE,fill=DELAY_SFO)) + 
+  geom_bar(position="fill") + 
+  theme_bw() + 
+  ylab("Frecuencia")
+
+
+DAY_OF_WEEK_TABLE_RELATIVE
+ggplot(vuelos,aes(x=DAY_OF_WEEK,fill=DELAY_SFO)) + 
+  geom_bar(position="fill") + 
+  theme_bw() + 
+  ylab("Frecuencia") 
+```
+
+Por lo que podemos ver, las 4 peores aerolineas en cuanto a retrasos son B6, F9, UA y WN. Mientras que HA y US son las que menos retrason tienen.
+
+En cuanto a los dias no hay una diferencia significativa. Aunque se ve una ligera mejora los dias 6 de la semana con una menor cantidad de retrasos. Tal vez una opcion seria agrupar entre dias de la semana y fines de la semana para entender si podemos sacar mejores conclusiones.
+
+Pero que pasa ahora si combinamos los valores de Dia y Semana a la vez? Veamoslo:
+
+```{r}
+ggplot(vuelos,aes(x=DAY_OF_WEEK,fill=DELAY_SFO)) + 
+  geom_bar(position="fill") + 
+  theme_bw() + 
+  ylab("Frecuencia") + 
+  facet_wrap(~AIRLINE)
+  
+ggplot(vuelos,aes(x=AIRLINE,fill=DELAY_SFO)) + 
+  geom_bar(position="fill") + 
+  theme_bw() + 
+  ylab("Frecuencia") + 
+  facet_wrap(~DAY_OF_WEEK) +
+  theme(axis.text.x=element_text(size=8,angle=90))
+
+```
+
+Con estas graficas no podemos sacar muchas mas conclusiones. El unico insigh rapido que obtenemos de aqui es que si bien vimos antes que la aerolinea HA tiene baja cantidad de retrasos a nivel total respecto a las demas aerolineas, esa gran diferencia se da solo en los dias 1 y 2. En los demas dias los retrasos son similares a las demas. 
+
+### 2.1.b Asociacion entre variables
+
+Para comprobar si existe asociación entre las variable dependiente y cada una de las variables explicativas, se aplicará el test Chi-cuadrado de Pearson. Un resultado significativo nos dirá que existe asociación. 
+
+Con R podemos aplicar este test de la siguiente forma:
+```{r}
+chi_1 <- chisq.test(AIRLINE_TABLE)
+chi_1
+
+
+chi_2 <- chisq.test(DAY_OF_WEEK_TABLE)
+chi_2
+```
+Como vemos el p-value es significativo por lo que podemos asumir asociacion, ya que se rechaza la hipotesis nula de independencia entre variables.
+
+O podemos usar esta otra funcion del paquete vcd que nos da varios coeficientes a la vez entre ellos el de Pearson.
+
+```{r}
+assocstats(AIRLINE_TABLE)
+assocstats(DAY_OF_WEEK_TABLE)
+```
+
+
+## 2.2. Creacion de Modelos de regresión logística.
+
+### 2.2.a. Con 1 una variable independiente: DAY_OF_WEEK
+
+Estimar el modelo de regresión logística tomando como variable dependiente delay_SFO y variable explicativa DAY_OF_WEEK. Se tomará como día de referencia el lunes. Se puede considerar que el día de la semana es un factor de riesgo? Justifica tu respuesta.
+
+
+Primero definimos como referencia el dia 1 y luego generamos el modelo
+```{r}
+DAY_OF_WEEK_REF_=relevel(factor(vuelos$DAY_OF_WEEK), ref = '1')
+
+model_22a=glm(formula=DELAY_SFO~DAY_OF_WEEK_REF_,family=binomial(link=logit), data=vuelos)
+
+summary(model_22a)
+```
+
+Tal como vemos aqui, segun el p-value, todos los dias son significativos.
+
+Pero como saber si el dia de la semana es un factor de riesgo o no? *Calculando el Odds Ratio.*
+
+Como sabemos los odds es la razón de la probabilidad de ocurrencia de un suceso entre la probabilidad de su no ocurrencia. En nuestro caso la probabilidad de ocurrencia del retraso. 
+
+$$Odds = \frac{p}{1-p}$$
+
+donde $p$ es la probabilidad de que el individuo tome el valor “1” en la variable dicotómica.
+
+Mientras que el Odds Ratio se obtiene como el cociente entre ambos odds. Donde la
+variable respuesta Y está presente entre los individuos, es decir, toma el
+valor Y = 1, y la variable independiente X puede estar presente o no, es
+decir, tomar los valores X = 1 y X = 0. Teniendo:
+
+$$OR =  \frac{\frac{p(Y=1/X=1)}{1-p(Y=1/X=1)}}{\frac{p(Y=1/X=0)}{1-p(Y=1/X=0)}} = e^{b1}$$
+
+Pudiendo darse 3 situaciones:
+
+- Un OR = 1 implica que no existe asociación entre la variable respuesta y
+la covariable.
+
+- Un OR inferior a la unidad se interpreta como un factor de protección,
+es decir, el suceso es menos probable en presencia de dicha covariable.
+
+- Un OR mayor a la unidad se interpreta como un factor de riesgo, es decir,
+el suceso es más probable en presencia de dicha covariable
+
+
+Veamos entonces que obtenemos con los datos de nuestro modelo, para ello podemos directamente ejecutar la funcion R exp, con la cual se calculará la exponencial de los coeficientes del modelo obtenido
+
+```{r}
+exp(coefficients(model_22a))
+```
+Tal como se ve todos los OR son menores a 1 por lo que podemos decir que el dia de la semana no es un factor de riesgo del retraso. Esto concuerda con el analisis visual que hicimos en el punto 2.1.
+
+### 2.2.b. Con 1 una variable independiente: AIRLINE.
+
+Idem al anterior tomando como variable explicativa AIRLINE. Se tomará como aerolínea de referencia AA. Se puede considerar que la aerolínea es un factor de riesgo? 
+
+Realicemos lo mismo que en el punto a. Generemos el modelo y calculemos el OR.
+```{r}
+AIRLINE_REF_=relevel(factor(vuelos$AIRLINE), ref = 'AA')
+
+model_22b=glm(formula=vuelos$DELAY_SFO~AIRLINE_REF_,family=binomial(link=logit))
+
+summary(model_22b)
+```
+
+Como puede verse no todas los p-value de cada variable son significativas. Por ej la aerolina VX, que es mediantemente significativa o la DL que directametnee no o es. O incluso As.
+
+Pero que pasa con el OR?
+
+```{r}
+exp(coefficients(model_22b))
+```
+
+A partir de los OR obtenidos volvemos a valiar el analisis visual del punto 2.1 donde habiamos determinado que las aerlineas US y HA tenian menos retrasos. Y aqui jistamente con el OR podemos ver que solo estas dos aerolineas no son un factor de riesgo del retraso. Siendo la mayoria de ellas un factor de riesgo.
+
+### 2.2.c. Con 2 variables independientes: DAY_OF_WEEK y DISTANCE
+
+Se creará un modelo con la variable dependiente y las variable explicativas DAY_OF_WEEK (la obtenida en el apartado a) y DISTANCE. ¿Se observa una mejora con referencia a los anteriores? 
+
+Incluimos entonces en el modelo la variable DISTANCE.
+
+```{r}
+
+model_22c=glm(formula=DELAY_SFO~DAY_OF_WEEK_REF_+DISTANCE,family=binomial(link=logit), data=vuelos)
+
+summary(model_22c)
+```
+El p-value de DISTANCE no es significativo. Sin embargo chequeemos el OR:
+
+```{r}
+exp(coefficients(model_22c))
+```
+El OR de distancia es casi igual a 1 lo cual implica, ademas de no ser significativa, que no existe asociación entre la variable respuesta y la covariable. O sea entre el Retraso y la Distancia.
+
+Pero esto no quiere decir que sea 100% concluyente, se podria realizar agrupamientos por distancias, como hemos visto con las regresiones lineales, donde para distancias cortas y distancias largas se podian obtener modelos distintos. Se podria hasta realizar agrupaciones por dias de la semana y fines de  semana, se podria analizar aerolineas low-cost vs aerolineas consideradas de primera linea, etc..
+
+### 2.2.d. Seleccion de las variables mas significativas
+
+Se creará un nuevo modelo con la variable dependiente y tomando como variables explicativas, aquéllas que han sido significativas en los apartados anteriores, y además se añadirá la variable ARRIVAL_DELAY.¿Se observa una mejora con referencia a los anteriores? Realizad el cálculo de las OR.
+
+Usamos solo estas dos que fueron significativoas y no la distancia, por lo que sumando el arriaval_delay obtenemos los siguientes resultados
+
+```{r}
+
+model_22d=glm(formula=DELAY_SFO~DAY_OF_WEEK_REF_+AIRLINE_REF_+ARRIVAL_DELAY,
+              family=binomial(link=logit), data=vuelos)
+
+summary(model_22d)
+```
+Al combinar estas variables, se evidencia un  cambio tanto en los coeficientes de cada variable como tambien su nivel de significancia.
+
+Veamos que ocurre con los Odds
+
+```{r}
+exp(coefficients(model_22d))
+```
+Esta combinacion de variables muestra que en su conjunto son un factor de riesgo del retraso.
+
+Por ultimo comparemos la bondad del ajuste de los 4 modelos a partir del coeficiente AIC:
+
+```{r}
+model_22a$aic
+model_22b$aic
+model_22c$aic
+model_22d$aic
+```
+Como vemos, con este ultimo modelo (model_22d) al incluir las 3 variables mencionadas obtenemos el valor mas bajo de AIC, o sea, es el modelo que mejor se ajusta a los datos. Los 3 previos poseen valores muy similares de AIC entre ellos.
+
+## 2.3. Predicción
+
+Según el modelo del apartado c), calcula la probabilidad de retraso en el vuelo, si nuestro destino está a 1500 millas y viajamos en jueves.
+
+```{r}
+
+predict_2.3 = data.frame(DAY_OF_WEEK_REF_="4", DISTANCE=1500)
+
+predicted_2.3 = predict(model_22c, newdata=predict_2.3, type ="response")
+predicted_2.3
+```
+De acuerdo con el modelo, se obtiene una probabilidad de retraso de 0.23.
+
+
+## 2.4. Bondad del ajuste
+
+Usa el test de Hosman-Lemeshow para ver la bondad de ajuste, tomando el modelo del apartado c). En la librería ResourceSelection hay una función que ajusta el test de Hosmer- Lemeshow.
+
+Se dice que un modelo presenta un buen ajuste a los datos si los valores que
+predice reflejan de manera adecuada los valores observados. Si el modelo presenta
+un mal ajuste, este no puede ser utilizado para extraer conclusiones ni
+efectuar predicciones.
+
+Un modo de medir la adecuación de un modelo es proporcionando medidas
+globales de **bondad de ajuste** mediante test estadísticos.
+
+Existen varias medidas de ajuste global para comparar la diferencia entre valores
+predichos y valores observados. Tres de las más utilizadas son:
+
+1- el test basado en la devianza D, 
+
+2- el estadístico χ2 (chi cuadradro) de Pearson y 
+
+3- el test de Hosmer-Lemeshow.
+
+Los dos primeros se basan en los patrones de las covariables y pueden ser usados
+en los modelos lineales generalizados (MLG) en general. 
+
+El tercero se basa en probabilidades estimadas y se aplica en el caso de un MLG con distribución binomial, es decir, un modelo de regresión logística, que es justamente nuestros caso. Si una de las variables explicativas es continua (DISTANCE), no deben usarse los test  1 y 2, sino el test de Hosmer-Lemeshow. 
+Este test consiste en comparar los valores previstos (esperados) por el modelo con los valores observados.
+
+Veamoslo:
+
+```{r}
+hoslem.test(vuelos$DELAY_SFO,fitted(model_22c))
+```
+
+Este test se basa en las siguientes hipotesis:
+
+H0: no hay diferencias entre las frecuencias observadas y las predichas (buen ajuste).
+
+H1: sí hay diferencias (mal ajuste).
+
+Por lo tanto dado que nuestro p-value es significativo, lo que implica el rechazo de H0 y por lo tanto que el modelo no ajusta bien a los datos.
+
+
+## 2.5. Curva ROC
+
+Dibujar la curva ROC, y calcular el área debajo de la curva con los modelos de los apartados c) y d).Discutir el resultado.
+
+```{r} 
+DELAY_SFO_DATA = vuelos[, c('DAY_OF_WEEK','DISTANCE')]
+prob = predict(model_22c, newdata=DELAY_SFO_DATA,type ="response")
+r=roc(vuelos$DELAY_SFO,prob, data=DELAY_SFO_DATA)
+plot (r)
+auc(r)
+```
+El análisis ROC proporciona un modo de seleccionar modelos posiblemente óptimos y subóptimos basado en la calidad de la clasificación a diferentes niveles o umbrales. Para tener una regla objetiva de comparación de las curvas ROC, se calcula el área bajo la curva, simplemente llamada AUROC (area under the ROC). El modelo cuya área sea superior es el preferido.
+
+En general:
+
+• Si AUROC ≤ 0,5, el modelo no ayuda a discriminar.
+
+• Si 0,6 ≤ AUROC < 0,8, el modelo discrimina de manera adecuada.
+
+• Si 0,8 ≤ AUROC < 0,9, el modelo discrimina de forma excelente.
+
+• Si AUROC ≥ 0,9, el modelo discrimina de modo excepcional.
+
+Por lo tanto el valor obtenido para el modelo 2.2.c esta al limite entre discriminar de manera adecuada a no ayudar a discriminar. Situacion que concuerda con lo visto en el punto 2.4 al momento de analizar la bondad del ajuste.
+
+# 3. Conclusiones del análisis
+
+Tanto con modelos lineales como con logaritmos podemos predecir de forma continua como dicotomica el retraso de los vuelos. Obtuvimos mejores o peores modelos y predictores segun las diferentes alternativas testeadas. Pero claro esta que este proceso solo fue el inicio porque hemos visto que segun que combinacion de variables podemos obtener mejores o peores ajustes, o segun que transformacion apliquemos a ciertas variables podemos mejorar la prediccion del modelo. Incluso segun que tipo de variables utilicemos y las relaciones que hubiera entre ellas sera mas optimo utilizar regresion lineal o logistica.
+
+# Referencias
+
+Regresión lineal simple, Josep Gibergans Bàguena, P08/75057/02311
+
+https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/plot.lm
+
+https://r-coder.com/tabla-contingencia-r/
+
+https://rpubs.com/osoramirez/111403
+
+https://data.library.virginia.edu/diagnostic-plots/
