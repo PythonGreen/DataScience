@@ -1,6 +1,6 @@
 # Analisis Estadistico I
 
-El objetivo de esta actividad es aplicar análisis descriptivos e inferenciales básicos al estudio de una muestra. Partimos del supuesto que todos habéis realizado un curso de estadística básica en algún momento de vuestros estudios previos. Esta actividad es un repaso de estos conceptos básicos puestos a la práctica en un caso de estudio concreto. En el apartado Recursos, os explicamos los conceptos que necesitáis conocer para realizar esta actividad y en qué parte de los módulos podéis localizar la información para realizar este tipo de análisis. Os recomendamos que trabajéis esta actividad desde el primer día, puesto que es larga y en función de los conocimientos previos que tengáis podéis necesitar más o menos tiempo de realización.
+El objetivo de esta actividad es aplicar análisis descriptivos e inferenciales básicos al estudio de una muestra. Esta actividad es un repaso de conceptos básicos puestos a la práctica en un caso de estudio concreto.
 
 En esta actividad se tratan los siguientes conceptos:
 
