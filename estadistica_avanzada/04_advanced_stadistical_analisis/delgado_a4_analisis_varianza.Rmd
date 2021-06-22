@@ -1,0 +1,1050 @@
+---
+title: "A4 - Análisis de varianza y repaso del curso"
+author: "Pablo A. Delgado"
+date: '`r format(Sys.Date()-1,"%e de %B, %Y")`'
+output:
+  pdf_document: 
+    highlight: zenburn
+    toc: yes
+    toc_depth: 4
+    latex_engine: lualatex
+  word_document: default
+  html_document:
+    fig_caption: yes
+    highlight: default
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+---    
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introducción
+
+El conjunto de datos trainCLEAN.csv se inspira (ha sido modificado por motivos académicos) en la base de datos disponible en la plataforma Kaggle: 
+
+https://www.kaggle.com/c/actuarial-loss-estimation.
+
+Este conjunto de datos contiene información de una muestra de indemnizaciones otorgadas por una compañía de seguros por el tiempo que ha estado de baja laboral el trabajador. El conjunto de datos contiene 54,000 registros y 15 variables.
+
+Las principales variables que se usarán en esta actividad son:
+
+* ClaimNumber: Identificador de la póliza.
+* DateTimeOfAccident: Fecha del accidente.
+* DateReported: Fecha que se comunica a la compañía y ésta abre un expediente del siniestro (apertura).
+* Age: Edad del trabajador.
+* Gender: Sexo.
+* MaritalStatus: Estado civil, (M)arried, (S)ingle, (U)nknown.
+* DependentChildren: Número de hijos dependientes.
+* DependentsOther: Número de dependientes excluyendo hijos
+* WeeklyWages: Salario semanal (en EUR).
+* PartTimeFullTime: Jornada laboral, Part time (P) o Full time(F).
+* HoursWorkedPerWeek: Número horas por semana.
+* DaysWorkedPerWeek: Número de días por semana.
+* ClaimDescription: Descripción siniestros.
+* InitialIncurredClaimCost: Estimación inicial del coste realizado por la compañía.
+* UltimateIncurredClaimCost: Coste total pagado por siniestro.
+
+Estos datos nos ofrecen múltiples posibilidades para consolidar los conocimientos y competencias de manipulación de datos, preprocesado, análisis descriptivo e inferencia estadística. 
+
+
+*************
+
+# 1 Lectura del fichero y preparación de los datos
+
+Leed el fichero trainCLEAN.csv y guardad los datos en un objeto con identificador denominado claim. A continuación, verificad que los datos se han cargado correctamente.
+
+
+Como primer step instalamos y cargamos todas las librerias que utilizaremos.
+```{r}
+packages <- c("ggplot2", "dplyr", "gridExtra", "ResourceSelection",
+              "eeptools","pROC", "data.table", "nortest", "caret", 
+              "gmodels", "lsr", "agricolae", "doBy")
+new <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new)) install.packages(new)
+foo=lapply(packages, require, character.only=TRUE)
+```
+
+Carguemos el fichero y realicemos una primera inspeccion del dataframe.
+```{r}
+claim = read.csv('trainCLEAN.csv',header=TRUE, sep=',')
+str(claim)
+summary(claim)
+head(claim)
+tail(claim)
+```
+
+
+## 1.1 Preparación de los datos
+
+Cambiamos el nombre de las variables a castellano. En concreto, se pide que se denominen de la siguiente forma: Id, Ocurrencia, Apertura, Edad, Sexo, Estado, Dependientes, OtrosDepend, Salario, Jornada, CosteInicio, CosteFinal, HorasSemana, DiasSemana y Descripcion.
+
+* Las variables ‘Ocurrencia‘ y ‘Apertura‘ están clasificadas como factor. Para poder trabajar con ellas hay que convertirlas en fechas.
+* Crear una variable denominada ‘tiempo‘ que contabilice en días el tiempo que tarda en abrirse un siniestro por la compañía desde su ocurrencia.
+
+```{r}
+# vemos los nombres actuales
+names(claim)
+
+# traducimos los nombres, teniendo en cuenta el orden correcto de columnas
+names(claim) = c ('Id', 'Ocurrencia', 'Apertura', 'Edad', 'Sexo', 'Estado',
+                  'Dependientes', 'OtrosDepend', 'Salario', 'Jornada',
+                  'HorasSemana',  'DiasSemana', 'Descripcion',  'CosteInicio',
+                  'CosteFinal')
+
+# Ahora vamos a convertir a fecha los campos de este tipo, pero primero
+# verifiquemos que sea posible la conversion:
+which(is.na(as.Date(claim$Ocurrencia, "%Y-%m-%d")))
+which(is.na(as.Date(claim$Apertura, "%Y-%m-%d")))
+
+# dado que es posible convertir sin problemas, hagamos efectiva la
+# transformacion
+claim$Ocurrencia = as.Date(claim$Ocurrencia, "%Y-%m-%d")
+claim$Apertura = as.Date(claim$Apertura, "%Y-%m-%d")
+
+# creemos la variable tiempo
+claim$tiempo = as.integer(age_calc(claim$Ocurrencia, 
+                                   enddate = claim$Apertura, units = "days",
+                                   precise = TRUE))
+
+# vemos los resultados de las transformaciones
+names(claim)
+str(claim)
+head(claim)
+```
+
+
+## 1.2 Clasificación de tiempo
+
+La variable tiempo indica la duración de apertura del siniestro de la siguiente forma: “Muy rápido” si se apertura en 15 días o menos, “Rápido” si se apertura entre 16 y 30 días, “Lento” si se apertura entre 31 y 89 días, y “Muy lento” si tarda 90 días o más en aperturarse el siniestro. Cread una variable categórica denominada Clasificacion, que clasifique el siniestro según estas categorías.
+
+Pasemos a crear la nueva variable:
+```{r}
+claim = claim %>% mutate(Clasificacion = case_when
+                  (tiempo <= 15 ~ 'Muy rápido',
+                   tiempo %in% c(16:30) ~ 'Rápido',
+                   tiempo %in% c(31:89) ~ 'Lento',
+                   tiempo >= 90 ~ 'Muy lento')
+                  )
+```
+
+
+## 1.3 Valores ausentes
+
+* Analizad el número de categorías distintas en las variables ‘Descripcion‘, ‘Sexo‘y ‘Estado‘. ¿Cuántas descripciones distintas hay de los siniestros?
+
+```{r}
+# hay 28114 descripciones distintas
+length(table(claim$Descripcion))
+
+# mientras que de sexo y estado tenemos estas cantidades:
+table(claim$Sexo)
+table(claim$Estado)
+
+# o sea tenemos estas cantidades distintas de categorias para esas variables:
+length(table(claim$Sexo))
+length(table(claim$Estado))
+```
+Como vemos arriba hay valores U y vacios en las variables sexo y estado.
+
+* Representad los observaciones con la categoría "U" (U=unknown) en las variables ‘Sexo‘y ‘Estado‘ como missings.
+
+```{r}
+claim[claim$Sexo == 'U','Sexo'] = NA
+claim[claim$Estado %in% c('','U'),'Estado']  = NA
+```
+
+Veamos el resultado de la transformacion:
+```{r}
+claim$Sexo = factor(claim$Sexo)
+table(claim$Sexo, exclude = FALSE)
+table(claim$Estado, exclude = FALSE)
+```
+
+* Comprobad la proporción de observaciones que tienen valores ausentes y sacad conclusiones sobre cómo de serio es el problema de valores ausentes en estos datos.
+
+```{r}
+# Estadísticas de valores vacíos
+colSums(is.na(claim))
+```
+Solo tenemos NA en las variables que convertimos antes. No tiene sentido mantenter observaciones sin saber el sexo de la persona ni tampoco el estado civil, preferimos tener todos los datos completos para crear un modelo lo mas preciso posible, y no queremos vernos afectados por missing values. Y dado que representansolo un 9.8% del total de las observaciones no vemos problema en eliminarlos. Ya que todavia contaremos con 48675 observaciones.
+
+* Eliminad los valores ausentes del conjunto de datos. Denominamos al conjunto de datos claimNet.
+
+```{r}
+claimNet = claim[-which(is.na(claim$Sexo) | is.na(claim$Estado)), ]
+str(claimNet)
+```
+
+## 1.4 Salud mental
+
+La compañía está preocupada por las bajas por salud mental. Por este motivo, quiere monitorizar las bajas que incluyan las palabras *Stress*, *Anxiety*, *Harassment* o *Depression*. Se pide:
+
+Crear la variable dicotómica denominada ‘RiesgoSM‘ si la variable ‘Descripcion‘ incluye alguna de estas palabras.
+
+```{r}
+
+condition = (tolower(claimNet$Descripcion)  %like% 'stress' | 
+                          tolower(claimNet$Descripcion)  %like% 'anxiety' |
+                          tolower(claimNet$Descripcion)  %like% 'harassment' |
+                          tolower(claimNet$Descripcion)  %like% 'depression'
+                         )
+claimNet$RiesgoSM = ifelse(condition, 1, 0)
+
+table (claimNet$RiesgoSM)
+
+```
+Como vemos solo 216 observaciones cumplen la condicion.
+
+## 1.5 Análisis visual
+
+Mostrad con diversos boxplot la distribución de la variable ‘CosteFinal‘ en escala logarítmica según la variable ‘Sexo‘, según ‘Estado‘, según ‘Clasificacion‘ y según ‘RiesgoSM‘. Interpretad los gráficos brevemente.
+
+```{r}
+a= ggplot(claimNet,aes(x=log(CosteFinal),fill=Sexo)) + 
+  geom_boxplot() + 
+  theme_bw()
+
+b=ggplot(claimNet,aes(x=log(CosteFinal),fill=Estado)) + 
+  geom_boxplot() + 
+  theme_bw()
+
+c=ggplot(claimNet,aes(x=log(CosteFinal),fill=Clasificacion)) + 
+  geom_boxplot() + 
+  theme_bw()
+
+d=ggplot(claimNet,aes(x=log(CosteFinal),fill=factor(RiesgoSM))) + 
+  geom_boxplot() + 
+  theme_bw()
+
+grid.arrange(a,b, c,d, nrow=2, ncol=2)
+
+```
+
+Como puede visualizarse la distribucion e IQR del logaritmo de Coste final para Sexo, Estado y Clasificacion son similares, y en todos los casos se ven outliers en ambos extremos de la distribucion. Se observa una distribucion distinta para el nivel de riesgo respecto a las demas variables e incluso la distribucion entre los grupos con y sin riesgo es bastante diferente, de hecho la mediana de los con riesgo tiene una tendencia hacia la derecha de la distribucion. 
+
+## 1.6 Comprobación de normalidad
+
+¿Podemos asumir que la variable CosteFinal tiene una distribución normal? Debéis justificar la respuesta a partir de métodos visuales y contrastes.
+
+* Realizad inspección visual de normalidad.
+
+
+```{r}
+ggplot(claimNet,aes(x=CosteFinal)) + 
+  geom_histogram(fill="lightblue") + 
+  theme_bw()
+
+```
+
+
+* Realizad contraste de normalidad de Lilliefors (p.ej. con función lillie.test de la libreria nortest).
+
+
+```{r}
+lillie.test(claimNet$CosteFinal)
+
+qqnorm(claimNet$CosteFinal)
+qqline(claimNet$CosteFinal)
+
+```
+
+Como vemos tanto a nivel grafico como con el p-value < 2.2e-16 se puede afirmar el rechazo de la hipotesis nula de normalidad, osea, no tenemos distribucion normal para CosteFinal.
+
+Pero veamos que pasa cuando aplicamos el logaritmo a nuestra variable objetivo:
+
+* Realizad inspección visual y contraste de normalidad a la variable Coste Final en escala logarítmica.
+
+```{r}
+
+ggplot(claimNet,aes(x=log(CosteFinal))) + 
+  geom_histogram(fill="lightblue", binwidth=0.1) + 
+  theme_bw()
+
+lillie.test(log(claimNet$CosteFinal))
+
+qqnorm(log(claimNet$CosteFinal))
+qqline(log(claimNet$CosteFinal))
+
+```
+
+Esta vez tanto con las graficas QQ como con el contraste de normalidad obteniendo un p-value mayor a 0.05 podemos decir que nuestros datos siguen una distribución normal luego de aplicar el logaritmo.
+
+
+*************
+
+# 2 Estadística inferencial
+
+Utilicemos a partir de aqui el conjunto de datos claimNet.
+
+## 2.1 Intervalo de confianza de la media poblacional de la variable CosteFinal
+
+* Calculad manualmente el intervalo de confianza al 95% de la media poblacional de la variable ‘CosteFinal‘ en escala normal (No se pueden utilizar funciones como t.test o z.test para el cálculo).
+
+
+Asumiendo un intervalo de confianza del 95% y siendo que no tenemos previamente calculada la varianza de la poblacion y debemos estimarla a partir de la desviacion de la muestra, nuestra variable sigue de esta forma una distribucion *t* de Student con n-1 grados de libertad. 
+
+Por lo que calcularemos el intervalo de confianza para la media de la variable CosteFinal cuando la varianza es desconocida previamente siguiendo estos calculos.
+
+*Nota*: **Dado que el intervalo de confianza a calcular es sobre la media, y apoyandonos en el TLC aplicaremos el estadistico mencionado en el parrafo anterior  (mas alla que sepamos por el apartado 1.6 que esta variable en escala normal no esta normalmente distribuida)**.
+
+
+```{r}
+alfa <- 1-0.95
+sd <- sd(claimNet$CosteFinal)
+n <- nrow(claimNet)
+SE <- sd / sqrt(n)
+# Para obtener las probabilidades o cuantiles de la distribución t 
+# se usan las funciones pt y qt de R, que son análogas a las 
+# funciones pnorm y qnorm de la distribución normal
+z <- qt( alfa/2, df=n-1, lower.tail=FALSE )
+peso_medio  = mean(claimNet$CosteFinal)
+L <- peso_medio - z*SE
+U <- peso_medio + z*SE
+
+data.frame(L, peso_medio, U, z ) 
+```
+
+Por lo tanto, el intervalo de confianza del 95% del CosteFinal es: [9450.34 , 9958.82].
+
+La función t.test de R realiza este cálculo automáticamente. Veámoslo:
+
+```{r}
+t.test( claimNet$CosteFinal, conf.level = 0.95)
+```
+
+
+Dado que no se conocía la varianza de la población y se ha estimado a partir de
+la muestra, hemos usado la distribución t de Student en lugar de la distribución
+normal. La consecuencia de esto es que el intervalo de confianza calculado con
+la distribución t es más ancho que el equivalente calculado con distribución
+normal. Por lo tanto, para un mismo nivel de confianza, hay más incertidumbre
+en el valor del parámetro de la población cuando se usa la distribución t.
+Pero tambien es cierto que, para tamaños de muestra grandes, la distribución t de Student se aproxima a la distribución normal.
+
+De hecho solo a modo de chequeo si hubiesemos aplicado qnorm, vemos que el intervalo de confianza es casi identico, ya que como mencionamos para muestras grandes t student tiende a una distribucion normal.
+
+```{r}
+z_qnorm <- qnorm( alfa/2, lower.tail=FALSE )
+L_qnorm <- peso_medio - z_qnorm*SE
+U_qnorm <- peso_medio + z_qnorm*SE
+data.frame(L_qnorm, peso_medio, U_qnorm, z_qnorm ) 
+```
+
+## 2.2 Contraste de hipótesis para la diferencia de medias
+
+En este caso queremos verificar la siguiente pregunta de investigacion:
+
+¿Podemos aceptar que la indemnización a las mujeres supera en más de 1000 EUR la de los hombres?
+
+### 2.2.1 Escribid la hipótesis nula y la alternativa
+
+Planteemos entonces la hipotesis nula y alternativa para esta pregunta:
+
+**H0**: Indemnización Mujeres $\le$  (Indemnización Hombres + 1000)
+
+**H1**: Indemnización Mujeres $>$ (Indemnización Hombres + 1000)
+
+Entonces segun lo que comprobemos en las siguientes secciones podremos llegar a decir:
+
+- Rechazo la H0 a favor de la H1 y por tanto si que hay evidencias que demuestran que la media de indemnización de las mujeres supera en mas de 1000 euros a las de los hombres- Y por tanto la respuesta a la pregunta de investigacion es SI, con el 95 de confianza
+		
+o
+
+- No hay evidencia que permita rechazar la hipotesis nula por lo que no puede afirmarse que la media de indemnización de las mujeras sea mayor en mas de 1000 euros que la de los hombres para la muestra seleccionada.
+
+### 2.2.2 Justificación del test a aplicar
+
+Dicho eso aplicaremos un contraste de dos muestras independientes, la muestra de mujeres y la de hombres hombres no tiene relacion entre ellos, con media y varianzas desconocidas. 
+
+Se trata de un test parametrico, porque contamos con distribuciones donde podemos asumir la normalidad de datos, porque aplica el Teorema del Limite Central al tener muestras de mas de 30 elementos y porque estamos aplicando contrastes de hipotesis sobre las medias de las muestras.
+
+Y dada las hipotesis planteadas se aplicara un test unilateral por la derecha, con un nivel de confianza del 95%, por lo que el nivel de significancia ($\alpha$) sera de 0.05.
+
+### 2.2.3 Cálculos
+
+Dados que asumimos que no se conocen las varianzas de la población y, por lo tanto, hay que estimarlas a partir de las muestras, para aplicar el estadístico adecuado, hay que comprobar si las varianzas de las dos poblaciones son iguales o diferentes. Para ello, aplicamos primero el test de igualdad de varianzas, tambien denomidado test de homoscedasticidad.
+
+
+```{r}
+  alfa <- 0.05
+  mujeres <- claimNet[claimNet$Sexo=='F',]$CosteFinal
+  hombres <- claimNet[claimNet$Sexo=='M',]$CosteFinal
+  mean1 <- mean(mujeres); n1 <- length(mujeres); s1 <- sd(mujeres)
+  mean2 <- mean(hombres); n2 <- length(hombres); s2 <- sd(hombres)
+  
+  fobs<-s1^2 / s2^2
+  fcritL <- qf(alfa/2, df1=n1-1, df2=n2-2 )
+  fcritU <- qf(1-alfa/2, df1=n1-1, df2=n2-2)
+  pvalue <- min(pf( fobs, df1=n1-1, df2=n2-2, lower.tail=FALSE ), 
+                pf( fobs, df1=n1-1, df2=n2-2)) *2
+  data.frame(fobs, fcritL, fcritU, pvalue) 
+```
+
+Como se puede observar, las funciones qf y pf devuelven el cuantil y la probabilidad de la distribución F respectivamente. 
+
+Como vemos aqui el valor observado cae fuera de la zona de aceptacion de la hipotesis nula, por ende se puede puede rechazar la hipotesis nula (H0=igualdad de varianzas). Sucede lo mismo si analizamos el valor *p*, basandonos en el, tambien podemos rechazar H0. Todo esto implica que estamos antes varianzas distintas.
+
+
+Tambien se puede aplicar simplemente el var.test en  para  evaluar estos conceptos o sea si podemos asumir varianzas parecidas o no. y segun eso aplicar una formula u otra.
+
+En R, la función var.test calcula el test de igualdad de varianzas:
+
+```{r}
+var.test(mujeres, hombres,   conf.level = 0.95 )
+```
+
+Una vez que podemos asumir que las varianzas son distintas, aplicaremos el metodo correspondiente a la media de dos poblaciones independientes con varianza desconocida distinta para obtener: el valor crítico y el p-value.
+
+Hay dos formas de rechazar la H0 para la pregunta de investigacion, con el valor critico o evaluando valor P (que es el error que estaria cometiendo) contra $\alpha$ osea si valor P < $\alpha$, osea si el error es menor que el error maximo permitido, si esto se cumple se puede rechazar la H0.
+
+
+Dada este breve explicacion calculemos cada uno de los valores y evaluemos los resultados:
+
+```{r}
+
+  mean1 <- mean(mujeres); n1 <- length(mujeres); s1 <- sd(mujeres)
+  mean2 <- mean(hombres)+1000; n2 <- length(hombres); s2 <- sd(hombres)
+  
+  tobs <- (mean1-mean2) / sqrt((s1**2)/n1 + (s2**2)/n2)
+  numerador  <- ((s1**2)/n1 + (s2**2)/n2)**2
+  denominador  <- ((s1**2)/n1)**2/(n1-1) + ((s2**2)/n2)**2/(n2-1)
+  grados_libertad  <- numerador / denominador
+  tcritL <- "-INF"
+  tcritU <- qt( 1-alfa, df=grados_libertad)
+  pvalue <-pt( tobs, df=grados_libertad, lower.tail=FALSE)
+  
+  data.frame(tobs, tcritL, tcritU, pvalue) 
+```
+
+Por lo que vemos aqui el valor observado (tobs: t observado) esta por fuera de la zona de aceptacion, mayor al limite superior (t critico). Y esto sumado a que el pvalue es mucho menor que el nivel de significancia podemos rechazar la hipotesis nula. Esto implica que rechazamos la H0 a favor de aceptar la Hipotesis alternativa. 
+
+Reconfirmemos estos calculos con la ayuda de la funcion t.test:
+
+```{r}
+t.test(mujeres,hombres+1000, alternative="greater", var.equal=FALSE)
+```
+
+
+### 2.2.4 Interpretación del test
+
+Como hemos visto en el apartado anterior, si el p-value es menor que el valor de α seleccionado, existen evidencias suficientes para rechazar H0 en favor de H1, osea:
+ 
+  H0: *Indemnizacion Mujeres $\le$ (Indemnizacion Hombres + 1000)*  => \textcolor{red}{RECHAZADA}
+  
+  H1: *Indemnizacion Mujeres $>$ (Indemnizacion Hombres + 1000)* => \textcolor{blue}{ACEPTADA}
+  
+
+Dado que el p-value es menor que α y que el valor observado esta fuera de la zona de aceptacion de la hipotesis nula, podemos afirmar que se dispone de evidencia suficiente para considerar que las indemnización de las mujeres superan en mas de 1000 euros a la de los hombres con un nivel confianza del 95%
+
+*************
+
+# 3 Modelo de regresión lineal
+
+
+Estimad un modelo de regresión lineal múltiple que tenga como variables explicativas: Edad, Sexo, Estado, Dependientes, OtrosDepend, Salario, Jornada, HorasSemana, DiasSemana, Clasificacion, RiesgoSM, CosteInicio y como variable dependiente el CosteFinal en escala logarítmica 
+
+*Nota*: se recomienda transformar también a escala logarítmica la variable explicativa CosteInicio.
+
+
+```{r}
+Clasif_rel=relevel(factor(claimNet$Clasificacion), ref = 'Muy lento')
+Model_3 = lm(formula = log(CosteFinal) ~ Edad + Sexo + Estado + Dependientes +
+               OtrosDepend + Salario + Jornada + HorasSemana + DiasSemana +
+               Clasif_rel + RiesgoSM + log(CosteInicio), data = claimNet)
+summary(Model_3)
+```
+
+
+
+## 3.1 Interpretación del modelo
+
+
+Observando el p-value obtenido para cada variable explicativa podemos decir que las mas significativas para el modelo son: Edad, Sexo, y Salario en mayor medida, seguidas por Estado, Dependientes, la Jornada, DiasSemana, el RiesgoSM y el CosteInicio. Todas estas variables influyen con mayor significancia sobre la variable dependiente. Mientras que Clasificacion, OtrosDependientes y HorasSemanas, no tienen ninguna implicancia sobre el modelo.
+
+En cuanto al coeficiente de determinacon $R^2$, el cual mide la proporción de variación de la variable dependiente explicada por la(s) variable(s) independiente(s), es de 0.7333. Tal vez no sea tan elevado, pero eso no necesariamente implique que el modelo no se ajuste a los datos. Esta claro que cuando mas alto sea mejor se ajustara, pero por el mismo no puede determinarse si las estimacioness y predicciones de los coeficientes estan sesgados  o no, y es por eso que se deben examinar tambien las graficas de residuos como realizaremos a continuacion.
+
+
+## 3.2 Análisis residuos
+
+Como hemos dicho antes, para profundizar en la calidad del ajuste se deben analizar los residuos que nos indicarán realmente como se ajusta nuestro modelo a los datos muestrales. Recordemos que los residuos (o errores) son la diferencia entre los valores observados y los valores que predice el modelo. Es por eso que utilizaremos los siguientes graficos de residuos para entender nuestra regresion:
+
+
+```{r}
+plot(Model_3, which = c(1,2), caption = list("Residuals vs Fitted", "Normal Q-Q"))
+```
+
+
+A la vista del gráfico se observa un patrón de dispersión irregular. Es decir no es un patrón aleatorio de los residuos. Ademas se ven bastantes outliers. Esto indica que no se cumple el supuesto de varianza constante en los errores del modelo. Aqui las alternativas son probar con tests de igualdad de varianzas (complementarias a los graficos) y ver la posibilidad de transformar variables. o incluso para los outliers entender si son errores de medicion, tratarlos, o considerar realizar analisis robustos.
+
+Mientras que si vemos el grafico QQ, claramente nuestros residuos no siguen una distribucion normal. Vemos bastantes outliers tanto a la izquierda como a la derecha. Si hicieramos una segunda iteracion se deberia analizar si tratando los outliers en nuestros datos podemos normalizar los residuos y de esta manera mejorar el modelo.
+
+*Que los residuos de un modelo de regresión lineal se distribuyan de forma normal es una condición necesaria para que la significancia (p-value) y los intervalos de confianza asociados a los predictores (calculados a partir de modelos teóricos) sean precisos.*  
+
+En resumen si queremos determinar si encontramos modelos mejor ajustados o validados, tendriamos que profundizar mas en las variables para entender los outliers, o incluso si hay relaciones no lineales, osea exponenciales o logaritmicas, para ajustar mejor el modelo.
+
+
+## 3.3 Predicción
+
+Predecid el coste esperado para las siguientes características: Edad=24, Sexo= “F”, Estado=“S”, Dependientes=1, OtrosDepend=0, Salario=500, Jornada=“F”,HorasSemana=40,DiasSemana=5, Clasificacion=“Lento”, RiesgoSM=“TRUE” y “CosteInicio”=10000.
+
+*Nota*: Debes tener en cuenta que el valor esperado de una variable aleatoria que su logaritmo se distribuye según una normal, i.e. distribución lognormal, es exp(mu+var/2) donde mu y var son la media y la varianza de la transformación logarítmica).
+
+
+```{r}
+newdata = data.frame(Edad=24, Sexo= 'F', Estado='S', Dependientes=1,
+                      OtrosDepend=0, Salario=500, Jornada='F',
+                      HorasSemana=40,DiasSemana=5, Clasif_rel='Lento', 
+                      RiesgoSM=1, CosteInicio=10000)
+result=predict(Model_3, newdata)
+
+exp(result)
+```
+La prediccion a partir del modelo definido nos dice que la indemnizacion de la persona sera de 13601.47 euros.
+
+
+*************
+
+# 4 Regresión logística
+
+## 4.1 Modelo predictivo
+
+Utilizando las mismas características como variables explicativas, ajustad un modelo predictivo basado en la regresión logística para predecir la probabilidad de que la compañía cuantifique inicialmente el coste del siniestro de forma insuficiente.
+
+Para ello, cread una variable Deficit que indique si la valoración inicial del coste del siniestro (CosteInicio) es inferior a la indemnización finalmente pagada por la compañía (CosteFinal). La variable Deficit debe codificarse como una variable dicotómica, que toma el valor 0 cuando la valoración inicial ha sido suficiente y 1 cuando la valoración inicial ha sido insuficiente.
+
+La variable Deficit será la variable dependiente del modelo. Analizad la calidad del modelo y las variables que son relevantes.
+
+
+Creamos la nueva variable
+```{r}
+claimNet$Deficit =  as.integer(claimNet$CosteInicio < claimNet$CosteFinal)
+```
+
+Creamos el modelo
+```{r}
+logit_model_4 = glm(formula=Deficit~Edad + Sexo + Estado + Dependientes +
+               OtrosDepend + Salario + Jornada + HorasSemana + DiasSemana +
+               Clasif_rel + RiesgoSM + log(CosteInicio), 
+               data=claimNet, 
+               family=binomial)
+summary(logit_model_4)
+```
+
+**Calidad del Modelo**
+
+Se dice que un modelo presenta un buen ajuste a los datos si los valores que
+predice reflejan de manera adecuada los valores observados. Si el modelo presenta un mal ajuste, este no puede ser utilizado para extraer conclusiones ni efectuar predicciones.
+
+Un modo de medir la adecuación de un modelo es proporcionando medidas
+globales de **bondad de ajuste** mediante test estadísticos.
+
+Existen varias medidas de ajuste global para comparar la diferencia entre valores predichos y valores observados. Tres de las más utilizadas son:
+
+1- el test basado en la devianza D, 
+
+2- el estadístico χ2 (chi cuadradro) de Pearson y 
+
+3- el test de Hosmer-Lemeshow.
+
+Los dos primeros se basan en los patrones de las covariables y pueden ser usados en los modelos lineales generalizados (MLG) en general. 
+
+El tercero se basa en probabilidades estimadas y se aplica en el caso de un MLG con distribución binomial, es decir, un modelo de regresión logística, que es justamente nuestros caso. Si una de las variables explicativas es continua (DISTANCE), no deben usarse los test  1 y 2, sino el test de Hosmer-Lemeshow. 
+Este test consiste en comparar los valores previstos (esperados) por el modelo con los valores observados.
+
+Veamoslo:
+
+```{r}
+hoslem.test(claimNet$Deficit,fitted(logit_model_4))
+```
+
+Este test se basa en las siguientes hipotesis:
+
+H0: no hay diferencias entre las frecuencias observadas y las predichas (buen ajuste).
+
+H1: sí hay diferencias (mal ajuste).
+
+
+Por lo tanto dado que nuestro p-value es significativo, lo que implica el rechazo de H0 y por lo tanto que el modelo no ajusta bien a los datos. Tengamos en cuenta que aqui estamos usando por default todas las mismas variables que usamos para la regresion lineal, tal vez deberia realizar un analisis mas profundo o una 2da iteracion para entender que variables se adecuan mas a los datos y de esta manera mejorar este valor obtenido con el test de Hosmer-Lemeshow. 
+
+Pero validemos tambien con el analisis de ROC y veamos que obtenemos.
+
+
+**Curva de ROC**
+
+El análisis ROC proporciona un modo de seleccionar modelos posiblemente óptimos y subóptimos basado en la calidad de la clasificación a diferentes niveles o umbrales. Para tener una regla objetiva de comparación de las curvas ROC, se calcula el área bajo la curva, simplemente llamada AUROC (area under the ROC).
+
+El modelo cuya área sea superior es el mejor.
+
+En general:
+
+* Si AUROC $\le$ 0,5, el modelo no ayuda a discriminar.
+* Si 0,6 $\le$ AUROC $<$ 0,8, el modelo discrimina de manera adecuada.
+* Si 0,8 $\le$ AUROC $<$ 0,9, el modelo discrimina de forma excelente.
+* Si AUROC $\ge$ 0,9, el modelo discrimina de modo excepcional.
+
+```{r}
+prob_low=predict(logit_model_4, claimNet, type="response")
+r=roc(claimNet$Deficit,prob_low, data=claimNet)
+plot(r)
+auc(r)
+```
+
+Por lo tanto segun el valor obtenido, podemos decir que nuestro modelo discrimina de manera adecuada.
+
+
+
+## 4.2 Interpretación
+
+Si comparamos la contribucion de cada variable respecto al modelo de regresion multiple del apartado anterior vemos que con regresion logistica algunas variables mejoraron su significancia, tal como es el caso de Clasificacion.
+
+Aunque claro esta que en este caso nuestra varible dependiente es otra, y es mas probable que el tiempo en que se aperture un siniestro, como es el caso, tenga mayor significancia. Y todo lo contrario sucede por ej con el RiesgoSM que deja de ser significativa o tener efecto sobre el Deficit, cuando si era muy infuyente sobre el CosteFinal en la regresion lineal multiple.
+
+Ademas obtuvimos valores un poco opuestos entre el test de Hosmer-Lemeshow y la curva de ROC, claramente se deberia realizar una 2da iteracion para mejorar el modelo.
+
+Pero veamos tambien que nos dicen los odd ratios
+
+```{r}
+exp(coefficients(logit_model_4))
+```
+
+En base a las OR ajustadas saquemos algunas conclusiones de nuestro modelo.
+
+Si focalizamos por ej en Sexo, observamos que para el sexo masculino, ajustado por el resto de las variables, tiene un valor menor 1. Esto significa que  la posibilidad que exista Deficit cuando se trate de un hombres sera menor que cuando se trate de una mujer. Y un caso similar sucede con por el estado civil, donde el deficit siendo soltero sera menor que para un casado. 
+Mientras que si observamos Clasificacion, donde todos sus odds son mayores a 1 (por muy poco claro esta), quiere decir que es mas probable tener deficit en esos casos que cuando el siniestros se haya aperturado MuyLento.
+
+## 4.3 Matriz de confusión
+
+A continuación analizad la precisión del modelo, comparando la predicción del modelo sobre los mismos datos del conjunto de datos. Asumiremos que la predicción del modelo es 1 (valoración inicial del coste insuficiente) si la probabilidad del modelo de regresión logística es superior o igual a 0.5 y 0 en caso contrario. Analizad la matriz de confusión y las medidas de ‘sensitivity’ y ‘specificity’.
+
+*Nota*: Tomad como categoría de interés que haya déficit en la valoración inicial del coste. Por tanto, déficit igual a 1 será el caso positivo en la matriz de confusión y 0 el caso negativo.
+
+*Para que un modelo de regresión logística con fines predictivos tenga
+éxito, el número de casos que se clasifican correctamente tiene que ser
+alto, mientras que el número de casos que se clasifican incorrectamente
+debe ser bajo.*
+
+Dicho eso analicemoslo para nuestro modelo con la matriz de confusion mediante el uso de funciones R.
+
+La funcion confusionMatrix de la libreria caret nos da muchas metricas, pero en este caso practico nos concetraremos en explicar Accuracy, sensitivity, specificity y los porcentajes de falsos positivos y negativos analizandos primeros a partir de los resultados de la funcion CrossTable de la libreria gmodels.
+
+Veamos:
+
+```{r}
+predicted <- predict(logit_model_4, newdata = claimNet, type = "response")
+
+CrossTable( factor(as.numeric(predicted>0.5)), factor(claimNet$Deficit),
+            prop.chisq  = FALSE, prop.c = FALSE, prop.r =FALSE,
+            dnn = c('Prediction', 'Reality'))
+```
+
+
+El número de resultados denominados falsos positivos corresponde a casos en
+los que la predicción de la probabilidad de la respuesta afirmativa es elevada,
+pero la respuesta observada es negativa. En nuestro caso existen 10962 falsos positivos. Que representan el 22.5 % del total de casos. Veamoslo caso por caso:
+
+* True positives (TP): correct positive prediction: 22054 
+* False positives (FP): incorrect positive prediction: 10962 
+* True negatives (TN): correct negative prediction: 9759 
+* False negatives (FN): incorrect negative prediction: 5900 
+* Positivos (P) = (FN + TP): 27954 
+* Negativos (N) = (TN + FP): 20721 
+
+Pero que hay de la precision del modelo? tambien denominada Accuracy
+
+* La misma se calcula como el total de predicciones correctas sobre el total de casos, positivos y negativos.
+
+$$Accuracy = (TP + TN) / (P + N) = 0.6535$$ 
+
+* Sensitivity es calculada como el numero correcto de predicciones positivas (TP) sobre el total de casos positivos (P). La mejor sensitivity es 1 mientras que la peor es 0.
+
+$$Sensitivity = (TP) / (P) = 0.7889$$
+
+
+* Specificity es calculada como el numero correcto de predicciones negativas (TN) sobre el total de casos negativos (N). La mejor Specificity es 1 mientras que la peor es 0.
+
+$$Specificity = (TN) / (N) = 0.4709$$
+
+O sea a nuestro modelo con una Sensitivity de 0.7889 demuestra buena capacidad para detectar los casos positivos mientras que con un Specificity de 0.4709 parece no detectar los negativos de forma tan precisa.
+
+Todo esto es calculado directamente ejecutando la funcion que hemos comentado antes:
+
+```{r}
+confusionMatrix(data = factor(as.numeric(predicted>0.5)), 
+                reference = factor(claimNet$Deficit), positive='1')
+```
+
+
+## 4.4 Predicción
+
+¿Con que probabilidad la valoración inicial del siniestro será insuficiente para un hombre de 20 años de edad, soltero, sin hijos ni otros dependientes, con un salario semanal de 300 EUR, jornada partida, con 30 horas semanales y cinco días a la semana, una clasificación del tiempo hasta la apertura del siniestro de “Muy lento”, una baja que no es por depresión y una valoración inicial de 10000EUR?
+
+```{r}
+
+predict_44 = data.frame(Edad=20, Sexo= 'M', Estado='S', Dependientes=0,
+                      OtrosDepend=0, Salario=300, Jornada='F',
+                      HorasSemana=30,DiasSemana=5, Clasif_rel='Muy lento', 
+                      RiesgoSM=0, CosteInicio=10000)
+result = predict(logit_model_4, newdata=predict_44, type ="response")
+result
+```
+
+El modelo nos predice una probablidad del 26,7% de que la valoracion inicial sera insuficiente para un hombre con los atributos descriptos.
+
+
+*************
+
+# 5 Análisis de la varianza (ANOVA) de un factor
+
+Vamos a realizar un ANOVA para contrastar si existen diferencias en la variable CosteFinal en escala logarítmica en función de la clasificación del siniestro en relación al tiempo transcurrido hasta la apertura.
+
+Recordemos que clasificacion nos indicaba la "velocidad" con que los siniestros era abiertos desde su ocurrencia.
+
+```{r}
+table(claimNet$Clasificacion)
+```
+
+
+## 5.1 Hipótesis nula y alternativa
+
+
+Queremos preguntarnos si la clasificacion del tiempo de apertura de los siniestros es significativa, en el sentido si el CosteFinal de la indemnizacion de los empleados es afectado por ese factor. Por lo tanto, planteemos la hipotesis nulas y alternativa para nuestra pregunta de investigacion.
+
+En ANOVA como primer paso queremos analizar si existira diferencias significativas entre los grupos del factor Clasificacion. Por lo que nuestras hipotesis serian
+
+* H0: no hay diferencias significativas entre los niveles de clasificacion
+* H1: Al menos hay una diferencia significativa entre los niveles de clasificacion
+
+Pero de que diferencias hablamos? Este analisis consiste en un analisis de varianzas.
+
+Si denominamos Varianza como V y a cada grupo de la siguiente forma:
+
+* Nivel 1 = Muy Lento = ml
+* Nivel 2 = Lento = l
+* Nivel 3 = Rápido = r
+* Nivel 4 = Muy Rapido = mr
+
+Tendremos las hipotesis escritas de la siguiente forma.
+
+* H0: Vml = Vl = Vr = Vmr = 0
+* H1: Vi <> Vj, para algun i, j de: c(ml, l, r, mr)
+
+## 5.2 Modelo
+
+Para calcular la tabla ANOVA asociada a este problema debemos primero ajustar el modelo mediante la función aov:
+
+```{r}
+claimNet$CosteFinal.log = log(claimNet$CosteFinal)
+model_52<-aov(CosteFinal.log~Clasificacion,data=claimNet)
+model_52
+```
+
+y luego usamos la funcion anova para analizar los resultados, obteniendo aqui la Tabla ANOVA:
+
+```{r}
+taov_52<-anova(model_52)
+print(taov_52)
+```
+
+Obtenemos un p-valor  2.2e-16, claramente inferior a un nivel de significación del 5 %. Por lo tanto, aceptamos la hipótesis alternativa y concluimos que el factor Clasificacion es significativo. Es decir, el tipo de apertura de un siniestro afecta al CosteFinal de la indemnizacion otorgada. La tarea a continuación será determinar en qué niveles del factor están esas diferencias. 
+
+Como vemos en la tabla ANOVA y en concreto el valor de MSE nos proporciona una estimación de la varianza del error **$\hat{\sigma}^2=2.336$**.
+
+Tambien tenemos que la suma de cuadrados es 190, la media de la suma de cuadrados 63.293, el F 27.092 y el p-value que ya hemos mencionado.
+
+## 5.3 Efectos de los niveles del factor
+
+Calculad la variabilidad explicada por la variable Clasificacion sobre la variable CosteFinal mediante la métrica eta squared. Interpretad los resultados.
+
+Esto es posible calcularlo con la funcion etaSquared de R. Pero que nos dice esta funcion? Basicamente obtendremos un porcentaje el cual indicadara la medida en que la variabilidad de CosteFinal es explicada por el factor Clasificacion. Osea hasta que punto este factor es capaz de explicar la variabilidad de los datos.
+
+```{r}
+#Effect size
+etaSquared(model_52)
+```
+
+Como vemos el valor es menor a 1%. Es decir menos del 1% de la variabilidad se explica por la variable Clasificacion, osea, tiene poco impacto sobre coste final. Pero ahora vemos como es explicada la variabilidad por cada nivel del factor.
+
+
+```{r}
+model.tables(model_52,type="effects")
+```
+
+
+## 5.4 Contraste dos-a-dos
+
+Como los factores han resultado significativos hay que hacer los contrastes de las comparaciones múltiples. Se puede utilizar la prueba de Tukey-Kramer que compara dos-a-dos las diferentes categorías de la variable.
+
+
+La funcion HSD de la prueba Tukey-Kramer nos permite analizar a partir del estadistico calculado cual es la diferencia minima que tienen q tener dos grupos para que pueda considerarse distntos entre si.
+
+
+Pero antes por ejemplos usemos la función pairwise.t.test del paquete stat para obtener los p-valores de todas las comparaciones por parejas.
+
+```{r}
+pairwise.t.test(claimNet$CosteFinal.log, 
+                claimNet$Clasificacion, 
+                p.adj=c("none"))
+```
+Vemos que hay diferencias entre los niveles Lento y Muy Lento con el nivel Rapido o Muy Rapido. No obstante, cabe remarcar que, en el caso de un diseño con $a$ tratamientos, hay $a(a – 1)/2$ comparaciones por parejas de tratamientos distintas. Si estamos interesados en hacer todos los contrastes por parejas, hay que emplear técnicas de inferencia simultánea para ajustar los p-valores obtenidos mediante el test anterior.
+
+Para ello realicemos las comparaciones múltiples con la prueba inicialmente mencionada:
+
+
+```{r}
+HSD.test(model_52, "Clasificacion", group=T, console = TRUE)
+```
+
+Observamos que las aperturas de siniestros lentas y muy lentas forman un grupo homogéneo que provoca un nivel de Coste Final similar, mientras que las aperturas Muy Rapida y Rapida forman dos grupos mas, siendo el primero el que menos CosteFinal genera y el segundo el de mayor impacto en el coste final de la indemnizacion.
+
+## 5.5 Adecuación del modelo
+
+Mostrad la adecuación del modelo ANOVA. Se pide lo siguiente:
+
+* Análisis visual de normalidad de los residuos. Podéis usar la función plot sobre el modelo ANOVA calculado.
+* Análisis visual de homocedasticidad de los residuos. Podéis usar plot sobre el modelo ANOVA calculado.
+* Contraste de normalidad y homocedasticidad.
+
+Veamos cada punto: la normalidad y homocedasticidad analizada visualmente como tambien con estadistica inferencial.
+
+* **Normalidad de los residuos**
+
+El análisis visual de la normalidad de los residuos se puede hacer a partir del gráfico Normal Q-Q. 
+
+```{r}
+plot(model_52, which = 2, 
+     caption = list( "Normal Q-Q"))
+
+```
+
+Observamos que la mayoría de los residuos se ajustan a la recta, por lo que no hay evidencia en contra del supuesto de normalidad. 
+
+Adicionalmente, podemos contrastar la normalidad mediante el test de Lilliefors (Kolmogorov-Smirnov), donde la hipótesis nula es aquella que afirma que la distribución es normal:
+
+```{r}
+lillie.test(residuals(model_52))
+```
+
+A la vista del p-valor obtenido, mantenemos la hipótesis nula y podemos aceptar que la variable aleatoria $e_{ij}$ sigue una distribución normal. 
+
+
+* **Homocedasticidad**
+ 
+El gráfico “Residuals vs Fitted” proporciona información sobre la homcedasticidad de los residuos.
+
+```{r}
+plot(model_52, which = 1, caption = list( "Residuals vs Fitted"))
+```
+
+
+Observamos 4 tiras verticales de puntos que están situadas en las medias de cada grupo. Como hemos dicho, estas corresponden a los valores ajustados de las observaciones. La disposición de los residuos muestra una dispersión parecida en cada tira. 
+
+Tener en cuenta que la visualizacion de las varianzas nos da una indicacion visual orientatia en lugar de una confirmacion estadistica de homogeneidad. Para confirmarla o no debemos realizar un test estadistico.
+
+Por eso mismo vamos testear la homogeneidad de varianzas mediante el test de
+Bartlett, que es aplicable en caso de normalidad. La hipótesis nula es la de homogeneidad de varianzas a través de los niveles. Esto es
+
+*H0*: $\alpha_{1}=\alpha_{2}=\alpha_{3}=\alpha_{4}=0$
+
+*H1*: $\alpha_{i}\not=\alpha_{j}$ *para algun* $i\not=j$
+
+Sigamos analizando los datos del ejemplo. Evaluamos la homogeneidad de las varianzas.
+
+```{r}
+bartlett.test( CosteFinal.log~Clasificacion, data=claimNet)
+```
+
+A la vista del p-valor, rechazamos la hipótesis nula de que todas las varianzas son iguales. Con que una no sea igual, razon suficiente para rechazar la hipotesis nula. Esto de alguna forma confirma lo que se vio visualmente ya que si bien a "la vista" eran las 4 lineas muy parecidas, la 2da mostro una mayor compresion de los puntos.
+
+
+*************
+
+# 6 ANOVA multifactorial
+
+A continuación, se desea evaluar el efecto sobre CosteFinal en escala logarítmica según Sexo combinado con el factor RiesgoSM. Seguid los pasos que se indican a continuación.
+
+## 6.1 Análisis de los efectos principales y posibles interacciones
+
+Dibujad en un gráfico la variable CosteFinal en escala logarítmica en función de Sexo y en función de RiesgoSM. El gráfico debe permitir evaluar si hay interacción entre los dos factores. Por ello, se recomienda seguir estos pasos:
+
+
+### 6.1.1. Agrupacion Conjunto de datos
+
+Agrupad el conjunto de datos por Sexo y por RiesgoSM. Calculad el número de casos disponibles de cada combinación de factores.
+
+```{r}
+summaryBy(CosteFinal.log ~ Sexo+RiesgoSM, data=claimNet, FUN=c(NROW))
+```
+
+
+
+### 6.1.2. Media por grupo
+
+Calculad la media de coste (en log) para cada grupo.
+
+
+```{r}
+claimNet$RiesgoSM = factor(claimNet$RiesgoSM)
+summaryBy(CosteFinal.log ~ Sexo+RiesgoSM, data=claimNet, FUN=c(mean))
+```
+
+### 6.1.3. Visualizacion del valor medio
+
+Mostrad en un gráfico el valor medio de la variable CosteFinal en escala logarítmica para cada factor.
+
+```{r}
+interaction.plot(claimNet$Sexo, claimNet$RiesgoSM, claimNet$CosteFinal.log)
+interaction.plot(claimNet$RiesgoSM, claimNet$Sexo, claimNet$CosteFinal.log)
+```
+
+
+### 6.1.4. Interpretacion
+
+Como vemos en las graficas se ve que hay efectos sobre la variable respuesta pero no hay interaccion entre las variables condicion. Veamos en detalle:
+
+En el primer grafico en  el eje X aparecen los dos niveles del factor Sexo, en el eje Y aparece la media de la variable respuesta (CosteFinal.log). Estrictamente, el gráfico se basa en las cuatro medias para las cuatro condiciones experimentales, pero se unen mediante líneas las medias que corresponden al mismo nivel del factor que no está representado en el eje X (RiesgoSM). Vemos que tanto para los empleados con o sin Riesgo el valor de CosteFinal es mayor en el grupo de Mujeres. También observamos que los empleados con Riesgo (1) tienen un CosteFinal mayor que los Sin Riesgo (0) sean hombres o mujeres. Constatamos que el descenso en el CosteFinal entre los dos Niveles de Riesgo es aproximadamente el mismo en ambos Sexos, las líneas parecen paralelas y diremos que no se aprecia interacción.
+
+
+Y como vemos al intercambiar los factores en la representación de la interacción llegamos a conclusiones similares.
+
+
+## 6.2 Cálculo del modelo
+
+Dado que no existe interaccion entre nuestros factores podriamos calcular el modelo de la siguiente forma:
+
+```{r}
+modelo_62 <- aov(CosteFinal.log ~ Sexo + RiesgoSM, data = claimNet)
+```
+Pero creemoslo forzandola para verificar que esa interaccion no es significativa:
+
+
+```{r}
+modelo_62_interaccion_forzada=aov(CosteFinal.log~Sexo+RiesgoSM+Sexo:RiesgoSM, 
+                                  data = claimNet)
+anova(modelo_62)
+anova(modelo_62_interaccion_forzada)
+```
+
+Como vemos en el anova forzando la interaccion nada cambia y se observa que esa interaccion NO es significativa. Tal como habiamos validado visualmente con el plot de interaccion de grupos.
+
+Vemos que los factores principales son significativas, y aceptamos por lo tanto que hay efecto del Sexo y RiesgoSM.
+
+Ademas observamos que la variable Sexo es la que mayor efecto tiene sobre el CosteFinal, dado que por ej si nos basamos en la suma de cuadrados entre grupos de Sexo, 1174, esta es la diferencia entre grupos de sexo. Mientras que para el RiesgoSM esa diferencia entre grupos es de 858, menor a la de Sexo. Y como hemos dicho antes, la interaccion Sexo:RiesgoSM la suma de cuadrados es casi cero, por lo que no tiene efectos sobre la variabilidad del CosteFinal.
+
+Por ultimo la variabilidad no explicada, los residuos, es la que se observa en la ultima fila de la tabla ANOVA. Y ahi mismo tenemos que la estimacion de la varianza del error a partir de los MSE es **$\hat{\sigma}^2=2.3$**
+
+Con la funcion model.tables podemos tener un mayor detalle de los efectos de las variables condicion sobre el CosteFinal en relacion a la media de todos los datos:
+
+```{r}
+model.tables(modelo_62, type = "effects")
+```
+
+Dado que los factores principales han resultado significativos cada uno por su lado sin haber interaccion, deberemos realizar comparaciones por parejas. Por ejemplo, mediante el test de Tukey:
+
+```{r}
+# Aqui vemos que se forman dos grupos para cada sexo
+HSD.test(modelo_62, c("Sexo"),  group=T, console = TRUE)
+
+# caso similar para el riesgo que son dos grupos claramente distintos
+HSD.test(modelo_62, c("RiesgoSM"),  group=T, console = TRUE)
+
+```
+
+Mientras que este analisis se hubiera hecho si hubiese habido interaccion
+entre Sexo y RiesgoSM. De forma de determinar la combinacion de interaccion 
+mas optima
+```{r}
+HSD.test(modelo_62, c("Sexo","RiesgoSM"),  group=T, console = TRUE)
+```
+
+Donde hubiesemos tenido 3 grupos bien definidos. Donde la combinacion Riesgo con cualqiera de los sexos conforman uno, y otros dos grupos mas conformados por las observaciones sin riesgo para mujeres y otra sin riesgo para hombres.
+
+
+**Adecuación del modelo.**. Analicemos por ultimo la adecuacion del modelo
+
+```{r}
+plot(modelo_62, which = 2, 
+     caption = list( "Normal Q-Q"))
+```
+
+Claramente los residuos siguen una distribucion normal.
+
+```{r}
+lillie.test(residuals(modelo_62))
+```
+Tal como es comprobado estadisticamente con Lilliefors. Osea a la vista de la disposición de los cuantiles y del p-valor del test de Lilliefors, aceptamos
+la hipótesis de normalidad.
+
+
+```{r}
+plot(modelo_62, which = 1, caption = list( "Residuals vs Fitted"))
+
+```
+
+
+Aqui vemos justamente el patrón habitual cuando no se cumple la suposición de varianza constante, que es aquel que aparece en caso de que la varianza depende de la media del grupo.
+Por lo general, en estos casos hay un aumento de la varianza a medida que
+la media del grupo aumenta o disminuye. En consecuencia, el gráfico de residuos muestra una apertura a la derecha o a la izquierda (tal como es nuestro caso) en forma de embudo.
+
+```{r}
+condition <- with(claimNet, interaction(RiesgoSM, Sexo))
+bartlett.test(CosteFinal.log~condition, data=claimNet)
+```
+Hecho que se comprueba con el test de Barlett donde el p-value obtenido nos marca un rechazo de la hipotesis nula de homocedasticidad.
+
+La forma habitual de solucionar la no constancia de la varianza es por la transformación de la variable respuesta. Para algunas distribuciones hay transformaciones estándar que igualan o estabilizan la varianza. Hay una teoría general de las transformaciones estabilizadoras de la varianza que se aplica a las distribuciones donde la varianza depende de la media. Mientras que en casos donde no se cuenta con una trasnformacion conocida, se estila utilizar el metodo de Box-Cox el cual establece un procedimiento para determinar a partir de los datos la transformación de potencia. Pero la aplicacion del mismo excede el objetivo de esta practica.
+
+
+## 6.3 Interpretación de los resultados
+
+Como hemos podido analizar en el paso a paso del anova multifactorial es que las variables condicion Sexo y RiesgoSM son significativas y tienen gran influencia sobre la variable independiente, pero sin interaccionar entre ellas.
+Y si bien los residuos siguen una distribucion normal (tras la aplicacion del log), no tenemos homogeneidad entre grupos, lo cual obligaria a realizar transformacion, por ej aplicando el metodo de Box-Cox para lograr la homocedasticidad. Y asi, hacer cumplir las condiciones de aplicacion de Anova.
+
+
+*************
+
+# 7 Conclusiones
+
+En esta practica hemos realizado varios analisis estadisticos sobre el conjunto de datos provisto y del cual hemos obtenido interesantes resultado que pasamos a detallar a continuacion
+
+* **Normalidad de la variable CosteFinal**
+
+Hemos podido comprobar que la variable CosteFinal no sigue una distribucion normal, pero que al aplicarle la funcion logaritmo se logra normalizar dicha variable. Dato interesante, dado que es el objetivo a analizar y/o predecir en los apartados siguientes de esta practica.
+
+* **Contrastes de hipotesis**
+
+Se pudo inferir a traves de contrastes de hipotesis que la indemnización de las mujeres supera a la los hombres en 1000 euros con una confianza del 95%
+
+* **Regresion Lineal**
+
+En este punto se busco predecir la variable CosteFinal a partir de un grupo de variables de nuestro dataset, pero no se ha conseguido un muy buen ajuste del mismo a los datos ($R^2=0.7333$) y de hecho se ha comprobado que los residuos no siguen una distribucion normal ni existe homogeneidad de la varianza. Condiciones necesarias para una buena adecuacion de un modelo.
+
+* **Regresion Logistica** 
+
+En este caso buscamos predecir la variable deficit, la cual indica probabilidad de que la compañía cuantifique inicialmente el coste del siniestro de forma insuficiente. 
+
+Aqui hemos generado un modelo con una precision de solo el 65%. No obtuviendo tampoco buenos resultados con los test de calidad del modelo como ser Hosmer-Lemeshow, y digamos que la AUROC tampoco ha sido muy elevado. 
+
+Por lo que podemos decir que este modelo de regresion logistica asi tal como fue planteado no logro una gran adecuacion a los datos.
+
+Pero si se ha podido obtener interesantes conclusiones de los datos para siguientes iteraciones, ya que se ha logrado identificar variables significativas que influyen sobre el Deficit.
+
+
+* **ANOVA de un factor**
+
+Se aplico ANOVA para contrastar si existen diferencias en la variable CosteFinal en función de la clasificación del siniestro en relación al tiempo transcurrido hasta la apertura, determinando que **si** existen diferencias entre las varianzas de cada nivel del factor y dada esa situacion, se obtuvieron luego los grupos mas significativos del factor sobre CosteFinal.
+
+* **ANOVA Multifactorial**
+
+Por ultomo se evaluo el efecto sobre CosteFinal según el factor Sexo combinado con el factor RiesgoSM, donde se puedo tambien comprobar que ambas variables influyen sobre el Coste, pero sin interaccionar entre ellos (los factores).
+
+# Recursos
+
+* Análisis de la varianza (ANOVA), Ferran Reverter.
+* Modelos de regresión logística, Montserrat Guillén Estany y María Teresa Alonso Alonso.
+* https://rdrr.io/cran/eeptools/man/age_calc.html
+* https://picandoconr.wordpress.com/2016/08/30/normalidad-shapiro-test-y-lillie-test
+* https://classeval.wordpress.com/introduction/basic-evaluation-measures/
+* https://www.rdocumentation.org/packages/lsr/versions/0.5/topics/etaSquared
